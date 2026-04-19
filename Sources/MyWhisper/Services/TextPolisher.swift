@@ -1,3 +1,4 @@
+// Applies the current lightweight local cleanup pass to raw transcribed text.
 import Foundation
 
 enum TextPolisher {

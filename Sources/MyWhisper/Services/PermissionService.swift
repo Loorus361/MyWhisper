@@ -1,3 +1,4 @@
+// Reads and requests the microphone, speech, and accessibility permissions used by the app.
 import AVFoundation
 import ApplicationServices
 import Foundation

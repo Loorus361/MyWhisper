@@ -1,3 +1,4 @@
+// Collects app-wide constants for identifiers, timings, and default dictation vocabulary.
 import Foundation
 
 enum AppConstants {

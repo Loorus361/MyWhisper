@@ -1,3 +1,4 @@
+// Owns the floating overlay panel that shows dictation status above the desktop.
 import AppKit
 import SwiftUI
 

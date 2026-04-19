@@ -1,3 +1,4 @@
+// Coordinates hotkeys, permissions, dictation, paste insertion, overlay state, and persistence.
 import AppKit
 import Carbon.HIToolbox
 import Foundation

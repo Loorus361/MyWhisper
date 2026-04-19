@@ -1,3 +1,4 @@
+// Defines the supported dictation languages and their UI-facing metadata.
 import Foundation
 
 enum AppLanguage: String, Codable, CaseIterable, Identifiable {

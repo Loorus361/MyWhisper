@@ -1,3 +1,4 @@
+// Defines the menu bar popup content for language selection, last result, history, and settings.
 import AppKit
 import SwiftUI
 

@@ -1,4 +1,5 @@
 // swift-tools-version: 6.3
+// Defines the MyWhisper SwiftPM package and macOS target configuration.
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription

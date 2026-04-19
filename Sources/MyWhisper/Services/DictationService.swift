@@ -1,3 +1,4 @@
+// Captures audio buffers for push-to-talk dictation and resolves a final on-device speech result.
 import AVFoundation
 import Foundation
 import Speech

@@ -1,3 +1,4 @@
+// Represents one stored dictation event with raw text, final text, and metadata.
 import Foundation
 
 struct TranscriptionRecord: Codable, Identifiable, Equatable {

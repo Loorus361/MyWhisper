@@ -1,3 +1,4 @@
+# Ignores local build artifacts, staged app bundles, and machine-specific files for this repository.
 .DS_Store
 /.build
 /Packages

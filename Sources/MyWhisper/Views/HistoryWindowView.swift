@@ -1,3 +1,4 @@
+// Shows the grouped transcription history and a side-by-side raw versus final detail view.
 import SwiftUI
 
 struct HistoryWindowView: View {

@@ -1,3 +1,4 @@
+// Groups stored transcription records into day buckets and session windows for the history UI.
 import Foundation
 
 struct HistoryDayGroup: Identifiable {

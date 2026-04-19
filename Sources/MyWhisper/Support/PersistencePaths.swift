@@ -1,3 +1,4 @@
+// Resolves the Application Support paths used for MyWhisper settings and history storage.
 import Foundation
 
 enum PersistencePaths {

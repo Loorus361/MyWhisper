@@ -1,3 +1,4 @@
+// Enumerates the high-level runtime states shown in the menu bar and overlay UI.
 import Foundation
 
 enum DictationState: Equatable {

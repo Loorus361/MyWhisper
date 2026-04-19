@@ -1,3 +1,4 @@
+// Pastes transcribed text into the focused app by temporarily using and then restoring the clipboard.
 import AppKit
 import Carbon.HIToolbox
 import CoreGraphics

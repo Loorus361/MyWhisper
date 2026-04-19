@@ -1,3 +1,4 @@
+// Presents the settings form for language defaults, permissions, storage, and roadmap notes.
 import SwiftUI
 
 struct SettingsView: View {

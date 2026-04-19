@@ -1,3 +1,4 @@
+// Loads and saves the persisted app settings JSON file.
 import Foundation
 
 final class AppSettingsStore {

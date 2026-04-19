@@ -1,3 +1,4 @@
+// Models permission status values and the combined permission snapshot for the app.
 import Foundation
 
 enum PermissionState: String, Codable {

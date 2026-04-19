@@ -1,3 +1,4 @@
+// Renders the minimal live audio level meter used while the user is dictating.
 import SwiftUI
 
 struct AudioLevelMeterView: View {

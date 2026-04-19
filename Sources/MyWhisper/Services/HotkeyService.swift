@@ -1,3 +1,4 @@
+// Registers and dispatches the global push-to-talk hotkey through Carbon event APIs.
 import Carbon
 import Foundation
 

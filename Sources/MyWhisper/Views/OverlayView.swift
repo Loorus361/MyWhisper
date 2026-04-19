@@ -1,3 +1,4 @@
+// Renders the floating overlay that reflects the current dictation state and audio level.
 import SwiftUI
 
 struct OverlayView: View {

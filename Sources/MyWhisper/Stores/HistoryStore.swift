@@ -1,3 +1,4 @@
+// Loads and saves the persisted transcription history JSON file.
 import Foundation
 
 final class HistoryStore {

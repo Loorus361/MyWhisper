@@ -1,3 +1,4 @@
+// Holds the Swift Testing target for MyWhisper logic as the app grows.
 import Testing
 @testable import MyWhisper
 

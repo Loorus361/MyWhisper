@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Builds, signs, stages, and launches the local MyWhisper macOS app bundle.
 set -euo pipefail
 
 MODE="${1:-run}"

@@ -1,3 +1,4 @@
+// Declares the menu bar extra, history window, and settings window for MyWhisper.
 import AppKit
 import SwiftUI
 
