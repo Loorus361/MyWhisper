@@ -5,7 +5,7 @@ set -euo pipefail
 MODE="${1:-run}"
 APP_NAME="MyWhisper"
 BUNDLE_ID="com.carlosanderssohn.MyWhisper"
-MIN_SYSTEM_VERSION="14.0"
+MIN_SYSTEM_VERSION="26.0"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
@@ -46,7 +46,7 @@ cat >"$INFO_PLIST" <<PLIST
   <key>NSMicrophoneUsageDescription</key>
   <string>MyWhisper needs microphone access to capture dictation.</string>
   <key>NSSpeechRecognitionUsageDescription</key>
-  <string>MyWhisper needs speech recognition access to transcribe dictation on-device.</string>
+  <string>MyWhisper uses Apple on-device transcription to turn speech into text locally.</string>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
 </dict>

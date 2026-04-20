@@ -12,6 +12,8 @@ final class AppModel {
     var permissionSnapshot: PermissionSnapshot
     var dictationState: DictationState = .idle
     var audioLevel: Double = 0
+    var liveTranscriptPreview: String = ""
+    var selectedLanguageModelStatus: LanguageModelStatus = .idle
     var lastErrorMessage: String?
 
     let hotkeyDisplay = "Control + Option + S"
@@ -26,9 +28,10 @@ final class AppModel {
     private let overlayController: OverlayWindowController
 
     private var overlayHideTask: Task<Void, Never>?
-    private var warmedLanguageIDs = Set<String>()
-    private var warmUpTask: Task<Void, Never>?
-    private var warmingLanguageID: String?
+    private var preparedLanguageIDs = Set<String>()
+    private var preparationTask: Task<Bool, Never>?
+    private var preparationTaskToken: UUID?
+    private var preparingLanguageID: String?
     private var isHotkeyHeld = false
 
     init() {
@@ -45,6 +48,23 @@ final class AppModel {
         dictationService.onAudioLevel = { [weak self] level in
             Task { @MainActor [weak self] in
                 self?.audioLevel = level
+            }
+        }
+
+        dictationService.onLiveTranscript = { [weak self] preview in
+            Task { @MainActor [weak self] in
+                self?.liveTranscriptPreview = preview
+            }
+        }
+
+        dictationService.onLanguageModelStatus = { [weak self] status in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.selectedLanguageModelStatus = status
+
+                if case .failed(let message) = status {
+                    self.lastErrorMessage = message
+                }
             }
         }
 
@@ -68,7 +88,10 @@ final class AppModel {
             presentError("Failed to register the global hotkey.")
         }
 
-        scheduleWarmUpIfPossible(for: settings.selectedLanguage)
+        selectedLanguageModelStatus = preparedLanguageIDs.contains(settings.selectedLanguage.localeIdentifier)
+            ? .ready
+            : .idle
+        schedulePreparationIfPossible(for: settings.selectedLanguage)
     }
 
     var lastRecord: TranscriptionRecord? {
@@ -81,10 +104,28 @@ final class AppModel {
 
     var overlayStatusText: String {
         switch dictationState {
+        case .preparing:
+            return preparationStatusText
         case .error(let message):
             return message
         default:
             return dictationState.overlayTitle
+        }
+    }
+
+    var menuStatusText: String {
+        switch dictationState {
+        case .idle:
+            switch selectedLanguageModelStatus {
+            case .checking, .downloading, .failed:
+                return selectedLanguageModelStatus.displayText
+            case .idle, .ready:
+                return "Ready"
+            }
+        case .preparing:
+            return preparationStatusText
+        default:
+            return overlayStatusText
         }
     }
 
@@ -95,7 +136,14 @@ final class AppModel {
     func updateLanguage(_ language: AppLanguage) {
         settings.selectedLanguage = language
         settingsStore.save(settings)
-        scheduleWarmUpIfPossible(for: language)
+        liveTranscriptPreview = ""
+        lastErrorMessage = nil
+        selectedLanguageModelStatus = preparedLanguageIDs.contains(language.localeIdentifier) ? .ready : .idle
+        schedulePreparationIfPossible(for: language)
+    }
+
+    func retrySelectedLanguagePreparation() async {
+        _ = await prepareSelectedLanguageIfNeeded(force: true, interactive: false)
     }
 
     func copyLastFinalText() {
@@ -109,18 +157,27 @@ final class AppModel {
     func requestMicrophonePermission() async {
         _ = await permissionService.requestMicrophonePermission()
         refreshPermissions()
-        scheduleWarmUpIfPossible(for: settings.selectedLanguage)
+        schedulePreparationIfPossible(for: settings.selectedLanguage)
     }
 
     func requestSpeechPermission() async {
         _ = await permissionService.requestSpeechPermission()
         refreshPermissions()
-        scheduleWarmUpIfPossible(for: settings.selectedLanguage)
+        schedulePreparationIfPossible(for: settings.selectedLanguage)
     }
 
     func requestAccessibilityPermission() {
         permissionService.promptForAccessibilityPermission()
         refreshPermissions()
+    }
+
+    private var preparationStatusText: String {
+        switch selectedLanguageModelStatus {
+        case .checking, .downloading, .failed:
+            return selectedLanguageModelStatus.displayText
+        case .idle, .ready:
+            return "Preparing dictation..."
+        }
     }
 
     private func refreshPermissions() {
@@ -130,8 +187,12 @@ final class AppModel {
     private func handleHotkeyPressed() async {
         guard dictationState == .idle else { return }
         isHotkeyHeld = true
+        overlayHideTask?.cancel()
+        audioLevel = 0
+        liveTranscriptPreview = ""
+        lastErrorMessage = nil
 
-        if !warmedLanguageIDs.contains(settings.selectedLanguage.localeIdentifier) {
+        if !preparedLanguageIDs.contains(settings.selectedLanguage.localeIdentifier) {
             dictationState = .preparing
             overlayController.show()
             await Task.yield()
@@ -144,14 +205,20 @@ final class AppModel {
             return
         }
 
-        overlayHideTask?.cancel()
-        audioLevel = 0
-        lastErrorMessage = nil
-        dictationState = .listening
+        dictationState = .preparing
         overlayController.show()
 
         do {
-            try dictationService.startCapture(language: settings.selectedLanguage)
+            try await dictationService.startCapture(language: settings.selectedLanguage)
+
+            guard isHotkeyHeld else {
+                await dictationService.cancelCapture()
+                dictationState = .idle
+                overlayController.hide()
+                return
+            }
+
+            dictationState = .listening
         } catch {
             presentError(error.localizedDescription)
         }
@@ -184,6 +251,7 @@ final class AppModel {
             history.insert(record, at: 0)
             historyStore.save(history)
 
+            liveTranscriptPreview = ""
             dictationState = .inserted
             overlayController.show()
             scheduleOverlayHide(after: AppConstants.insertedOverlayDuration)
@@ -218,66 +286,131 @@ final class AppModel {
             return false
         }
 
-        await warmUpSelectedLanguageIfNeeded()
-
-        return true
+        return await prepareSelectedLanguageIfNeeded(force: false, interactive: true)
     }
 
-    private func scheduleWarmUpIfPossible(for language: AppLanguage) {
-        guard permissionService.microphonePermission() == .granted else { return }
-        guard permissionService.speechPermission() == .granted else { return }
-        guard !warmedLanguageIDs.contains(language.localeIdentifier) else { return }
-        guard warmingLanguageID != language.localeIdentifier else { return }
-
-        warmUpTask?.cancel()
-        warmingLanguageID = language.localeIdentifier
-        warmUpTask = makeWarmUpTask(for: language)
-    }
-
-    private func warmUpSelectedLanguageIfNeeded() async {
-        let language = settings.selectedLanguage
-
-        guard !warmedLanguageIDs.contains(language.localeIdentifier) else { return }
-
-        if warmingLanguageID == language.localeIdentifier, let warmUpTask {
-            await warmUpTask.value
+    private func schedulePreparationIfPossible(for language: AppLanguage) {
+        guard permissionService.microphonePermission() == .granted else {
+            if settings.selectedLanguage == language, !preparedLanguageIDs.contains(language.localeIdentifier) {
+                selectedLanguageModelStatus = .idle
+            }
             return
         }
 
-        warmingLanguageID = language.localeIdentifier
-        let task = makeWarmUpTask(for: language)
-        warmUpTask = task
-        await task.value
+        guard permissionService.speechPermission() == .granted else {
+            if settings.selectedLanguage == language, !preparedLanguageIDs.contains(language.localeIdentifier) {
+                selectedLanguageModelStatus = .idle
+            }
+            return
+        }
+
+        let languageID = language.localeIdentifier
+
+        if preparedLanguageIDs.contains(languageID) {
+            if settings.selectedLanguage.localeIdentifier == languageID {
+                selectedLanguageModelStatus = .ready
+            }
+            return
+        }
+
+        if preparingLanguageID == languageID, let preparationTask {
+            _ = preparationTask
+            return
+        }
+
+        preparationTask?.cancel()
+        preparingLanguageID = languageID
+        selectedLanguageModelStatus = .checking
+
+        let token = UUID()
+        preparationTaskToken = token
+        preparationTask = makePreparationTask(
+            for: language,
+            interactive: false,
+            token: token
+        )
     }
 
-    private func makeWarmUpTask(for language: AppLanguage) -> Task<Void, Never> {
-        let localeIdentifier = language.localeIdentifier
+    private func prepareSelectedLanguageIfNeeded(force: Bool, interactive: Bool) async -> Bool {
+        let language = settings.selectedLanguage
+        let languageID = language.localeIdentifier
+
+        if !force, preparedLanguageIDs.contains(languageID) {
+            selectedLanguageModelStatus = .ready
+            return true
+        }
+
+        if preparingLanguageID == languageID, let preparationTask {
+            return await preparationTask.value
+        }
+
+        preparationTask?.cancel()
+        preparingLanguageID = languageID
+        selectedLanguageModelStatus = .checking
+
+        let token = UUID()
+        preparationTaskToken = token
+        let task = makePreparationTask(for: language, interactive: interactive, token: token)
+        preparationTask = task
+        return await task.value
+    }
+
+    private func makePreparationTask(
+        for language: AppLanguage,
+        interactive: Bool,
+        token: UUID
+    ) -> Task<Bool, Never> {
+        let languageID = language.localeIdentifier
 
         return Task { @MainActor [weak self] in
-            guard let self else { return }
+            guard let self else { return false }
 
             defer {
-                if self.warmingLanguageID == localeIdentifier {
-                    self.warmingLanguageID = nil
+                if self.preparingLanguageID == languageID {
+                    self.preparingLanguageID = nil
                 }
-                if self.warmUpTask?.isCancelled == false, self.warmedLanguageIDs.contains(localeIdentifier) {
-                    self.warmUpTask = nil
-                } else if self.warmingLanguageID == nil {
-                    self.warmUpTask = nil
+
+                if self.preparationTaskToken == token {
+                    self.preparationTaskToken = nil
+                    self.preparationTask = nil
                 }
             }
 
             do {
-                try await self.dictationService.warmUp(language: language)
-                self.warmedLanguageIDs.insert(localeIdentifier)
+                try await self.dictationService.prepare(language: language)
+                self.preparedLanguageIDs.insert(languageID)
+
+                if self.settings.selectedLanguage.localeIdentifier == languageID {
+                    self.selectedLanguageModelStatus = .ready
+                    self.lastErrorMessage = nil
+                }
+
+                return true
+            } catch is CancellationError {
+                if self.settings.selectedLanguage.localeIdentifier == languageID,
+                   !self.preparedLanguageIDs.contains(languageID) {
+                    self.selectedLanguageModelStatus = .idle
+                }
+
+                return false
             } catch {
-                self.lastErrorMessage = error.localizedDescription
+                if self.settings.selectedLanguage.localeIdentifier == languageID {
+                    self.lastErrorMessage = error.localizedDescription
+                    self.selectedLanguageModelStatus = .failed(error.localizedDescription)
+
+                    if interactive {
+                        self.presentError(error.localizedDescription)
+                    }
+                }
+
+                return false
             }
         }
     }
 
     private func presentError(_ message: String) {
         audioLevel = 0
+        liveTranscriptPreview = ""
         lastErrorMessage = message
         dictationState = .error(message)
         overlayController.show()
@@ -292,6 +425,7 @@ final class AppModel {
             guard let self, !Task.isCancelled else { return }
             self.dictationState = .idle
             self.audioLevel = 0
+            self.liveTranscriptPreview = ""
             self.overlayController.hide()
         }
     }

@@ -26,7 +26,7 @@ struct MenuBarContentView: View {
 
         Divider()
 
-        Text(model.dictationState == .idle ? "Ready" : model.overlayStatusText)
+        Text(model.menuStatusText)
             .foregroundStyle(.secondary)
 
         Divider()

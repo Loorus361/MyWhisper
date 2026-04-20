@@ -50,6 +50,29 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Language Model") {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(model.settings.selectedLanguage.menuTitle)
+                        Text(model.selectedLanguageModelStatus.displayText)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    if model.selectedLanguageModelStatus.showsRetryAction {
+                        Button("Retry") {
+                            Task { await model.retrySelectedLanguagePreparation() }
+                        }
+                        .disabled(!model.selectedLanguageModelStatus.isRetryEnabled)
+                    }
+                }
+
+                Text("MyWhisper prepares only the currently selected Apple on-device speech model for this app session.")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Section("Storage") {
                 Text("History is stored locally with unlimited retention until you delete it manually.")
                     .foregroundStyle(.secondary)

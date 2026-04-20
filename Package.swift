@@ -7,7 +7,7 @@ import PackageDescription
 let package = Package(
     name: "MyWhisper",
     platforms: [
-        .macOS(.v14),
+        .macOS(.v26),
     ],
     targets: [
         .executableTarget(

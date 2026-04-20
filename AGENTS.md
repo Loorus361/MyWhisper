@@ -44,11 +44,11 @@ The app is intentionally macOS-first and personal-tool-first. Favor reliability,
 The current happy-path dictation flow is:
 
 1. User presses the global hotkey.
-2. `AppModel` verifies permissions and ensures the selected language has been warmed up.
-3. `DictationService` starts audio capture and speech buffering.
-4. The overlay shows listening state and live audio level.
+2. `AppModel` verifies permissions and ensures the selected language has been prepared for the current app session.
+3. `DictationService` prepares a fresh `SpeechAnalyzer` + `SpeechTranscriber` session and starts audio capture.
+4. The overlay shows listening state, live audio level, and volatile live transcription inside the app.
 5. User releases the hotkey.
-6. `DictationService` ends audio input and awaits a final transcription result.
+6. `DictationService` ends audio input and awaits a finalized transcription result.
 7. `TextPolisher` applies lightweight cleanup to the raw text.
 8. `ClipboardPasteService` pastes the final text into the focused app and restores the previous clipboard.
 9. The app stores raw and final text in history, grouped later by day and session.
@@ -113,6 +113,8 @@ Relevant permissions:
 - Microphone
 - Speech Recognition
 - Accessibility
+
+For macOS 26 builds, selected-language speech assets may be prepared automatically after microphone and speech permissions are granted.
 
 When permission behavior seems inconsistent, inspect signing and bundle identity before changing app logic.
 

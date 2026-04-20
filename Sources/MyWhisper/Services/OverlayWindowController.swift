@@ -8,7 +8,7 @@ final class OverlayWindowController {
 
     init() {
         panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 320, height: 98),
+            contentRect: NSRect(x: 0, y: 0, width: 460, height: 188),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -39,7 +39,7 @@ final class OverlayWindowController {
     private func updateFrame() {
         guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
 
-        let size = NSSize(width: 320, height: 98)
+        let size = NSSize(width: 460, height: 188)
         let visibleFrame = screen.visibleFrame
         let x = visibleFrame.midX - size.width / 2
         let y = visibleFrame.maxY - size.height - 16

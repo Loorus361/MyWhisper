@@ -1,173 +1,601 @@
-// Captures audio buffers for push-to-talk dictation and resolves a final on-device speech result.
-import AVFoundation
+// Captures audio for push-to-talk dictation with Apple SpeechAnalyzer and returns finalized local text.
+@preconcurrency import AVFoundation
+import CoreMedia
 import Foundation
+import OSLog
 import Speech
 
 final class DictationService: @unchecked Sendable {
     var onAudioLevel: (@Sendable (Double) -> Void)?
+    var onLiveTranscript: (@Sendable (String) -> Void)?
+    var onLanguageModelStatus: (@Sendable (LanguageModelStatus) -> Void)?
 
-    private let audioEngine = AVAudioEngine()
     private let contextualStrings: [String]
+    private let stateLock = NSLock()
+    private let logger = Logger(subsystem: AppConstants.bundleIdentifier, category: "Dictation")
 
-    private var speechRecognizer: SFSpeechRecognizer?
-    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
-    private var recognitionTask: SFSpeechRecognitionTask?
-    private var resultBridge: RecognitionBridge?
+    private var audioEngine: AVAudioEngine?
+    private var analyzer: SpeechAnalyzer?
+    private var transcriber: SpeechTranscriber?
+    private var analysisContext: AnalysisContext?
+    private var analysisFormat: AVAudioFormat?
+    private var inputContinuation: AsyncStream<AnalyzerInput>.Continuation?
+    private var resultsTask: Task<Void, Error>?
+    private var submittedBufferCount: Int = 0
+    private var submittedSampleCount: Int64 = 0
+    private var finalSegments: [String] = []
+    private var volatileSegment: String?
+    private var pipelineError: Error?
     private var isCapturing = false
+    private var languageStatusGeneration: UInt64 = 0
 
     init(contextualStrings: [String]) {
         self.contextualStrings = contextualStrings
     }
 
-    func warmUp(language: AppLanguage) async throws {
-        guard let recognizer = SFSpeechRecognizer(locale: language.locale) else {
-            throw DictationError.unsupportedLanguage
-        }
+    func prepare(language: AppLanguage) async throws {
+        let generation = nextLanguageStatusGeneration()
+        emitLanguageModelStatus(.checking, generation: generation)
+        logger.info("Preparing speech model for language \(language.localeIdentifier, privacy: .public)")
 
-        guard recognizer.supportsOnDeviceRecognition else {
-            throw DictationError.onDeviceRecognitionUnavailable
-        }
+        do {
+            let locale = try await resolvedLocale(for: language)
+            let transcriber = Self.makeTranscriber(locale: locale)
+            let modules: [any SpeechModule] = [transcriber]
+            let status = await AssetInventory.status(forModules: modules)
 
-        let inputNode = audioEngine.inputNode
-        let format = inputNode.inputFormat(forBus: 0)
+            if status == .unsupported {
+                throw DictationError.unsupportedLanguage(language.menuTitle)
+            }
 
-        guard format.channelCount > 0 else {
-            throw DictationError.noInputDevice
-        }
-
-        inputNode.removeTap(onBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 512, format: format) { _, _ in }
-        audioEngine.prepare()
-        try audioEngine.start()
-        try? await Task.sleep(nanoseconds: 150_000_000)
-        audioEngine.stop()
-        inputNode.removeTap(onBus: 0)
-
-        let request = SFSpeechAudioBufferRecognitionRequest()
-        request.requiresOnDeviceRecognition = true
-        request.shouldReportPartialResults = false
-        request.contextualStrings = contextualStrings
-        request.taskHint = .dictation
-
-        let task = recognizer.recognitionTask(with: request) { _, _ in }
-        request.endAudio()
-
-        try? await Task.sleep(nanoseconds: 200_000_000)
-        task.cancel()
-    }
-
-    func startCapture(language: AppLanguage) throws {
-        guard !isCapturing else {
-            throw DictationError.alreadyCapturing
-        }
-
-        guard let recognizer = SFSpeechRecognizer(locale: language.locale) else {
-            throw DictationError.unsupportedLanguage
-        }
-
-        guard recognizer.supportsOnDeviceRecognition else {
-            throw DictationError.onDeviceRecognitionUnavailable
-        }
-
-        let inputNode = audioEngine.inputNode
-        let format = inputNode.inputFormat(forBus: 0)
-
-        guard format.channelCount > 0 else {
-            throw DictationError.noInputDevice
-        }
-
-        let request = SFSpeechAudioBufferRecognitionRequest()
-        request.requiresOnDeviceRecognition = true
-        request.shouldReportPartialResults = false
-        request.contextualStrings = contextualStrings
-        request.taskHint = .dictation
-
-        let bridge = RecognitionBridge()
-        let audioLevelHandler = onAudioLevel
-
-        let task = recognizer.recognitionTask(with: request) { result, error in
-            if let error {
-                bridge.deliver(.failure(error))
+            if status == .installed {
+                emitLanguageModelStatus(.ready, generation: generation)
                 return
             }
 
-            guard let result, result.isFinal else { return }
+            if status == .downloading {
+                emitLanguageModelStatus(.downloading(progress: nil), generation: generation)
+            }
 
-            let text = result.bestTranscription.formattedString
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let request = try await AssetInventory.assetInstallationRequest(supporting: modules)
 
-            if text.isEmpty {
-                bridge.deliver(.failure(DictationError.noSpeechDetected))
-            } else {
-                bridge.deliver(.success(text))
+            guard let request else {
+                let refreshedStatus = await AssetInventory.status(forModules: modules)
+                guard refreshedStatus == .installed else {
+                    throw DictationError.modelPreparationFailed(
+                        "Apple speech assets are not available right now."
+                    )
+                }
+
+                emitLanguageModelStatus(.ready, generation: generation)
+                return
+            }
+
+            let progressTask = makeInstallationProgressTask(for: request, generation: generation)
+            defer { progressTask.cancel() }
+
+            try await request.downloadAndInstall()
+
+            let refreshedStatus = await AssetInventory.status(forModules: modules)
+            guard refreshedStatus == .installed else {
+                throw DictationError.modelPreparationFailed(
+                    "Apple speech assets are still not installed."
+                )
+            }
+
+            emitLanguageModelStatus(.ready, generation: generation)
+            logger.info("Speech model ready for language \(language.localeIdentifier, privacy: .public)")
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            logger.error("Speech model preparation failed: \(error.localizedDescription, privacy: .public)")
+            emitLanguageModelStatus(.failed(error.localizedDescription), generation: generation)
+            throw error
+        }
+    }
+
+    func startCapture(language: AppLanguage) async throws {
+        guard !withStateLock({ isCapturing }) else {
+            throw DictationError.alreadyCapturing
+        }
+
+        let locale = try await resolvedLocale(for: language)
+        let transcriber = Self.makeTranscriber(locale: locale)
+        let modules: [any SpeechModule] = [transcriber]
+
+        let audioEngine = AVAudioEngine()
+        let inputNode = audioEngine.inputNode
+        let inputFormat = inputNode.inputFormat(forBus: 0)
+        let tapFormat = Self.preferredTapFormat(for: inputNode, fallback: inputFormat)
+
+        guard tapFormat.channelCount > 0, tapFormat.sampleRate > 0 else {
+            throw DictationError.noInputDevice
+        }
+
+        guard
+            let analysisFormat = await SpeechAnalyzer.bestAvailableAudioFormat(
+                compatibleWith: modules,
+                considering: tapFormat
+            )
+        else {
+            throw DictationError.analyzerSetupFailed
+        }
+
+        let analysisContext = AnalysisContext()
+        analysisContext.contextualStrings[.general] = contextualStrings
+
+        let analyzer = SpeechAnalyzer(modules: modules)
+        try await analyzer.setContext(analysisContext)
+        try await analyzer.prepareToAnalyze(in: analysisFormat)
+
+        let inputStream = AsyncStream<AnalyzerInput>(bufferingPolicy: .unbounded) { continuation in
+            self.withStateLock {
+                self.inputContinuation = continuation
             }
         }
+        try await analyzer.start(inputSequence: inputStream)
 
-        inputNode.removeTap(onBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 2048, format: format) { buffer, _ in
-            request.append(buffer)
-            audioLevelHandler?(Self.normalizedLevel(for: buffer))
+        let resultsTask = makeResultsTask(for: transcriber)
+        logger.info(
+            """
+            Started dictation capture for \(language.localeIdentifier, privacy: .public) \
+            with input \(inputFormat.sampleRate, privacy: .public)Hz/\(inputFormat.channelCount, privacy: .public)ch, \
+            tap \(tapFormat.sampleRate, privacy: .public)Hz/\(tapFormat.channelCount, privacy: .public)ch, \
+            analyzer \(analysisFormat.sampleRate, privacy: .public)Hz/\(analysisFormat.channelCount, privacy: .public)ch
+            """
+        )
+
+        withStateLock {
+            self.audioEngine = audioEngine
+            self.analyzer = analyzer
+            self.transcriber = transcriber
+            self.analysisContext = analysisContext
+            self.analysisFormat = analysisFormat
+            self.resultsTask = resultsTask
+            self.submittedBufferCount = 0
+            self.submittedSampleCount = 0
+            self.finalSegments = []
+            self.volatileSegment = nil
+            self.pipelineError = nil
+            self.isCapturing = true
         }
 
-        speechRecognizer = recognizer
-        recognitionRequest = request
-        recognitionTask = task
-        resultBridge = bridge
-        isCapturing = true
+        onAudioLevel?(0)
+        onLiveTranscript?("")
+
+        inputNode.removeTap(onBus: 0)
+        inputNode.installTap(onBus: 0, bufferSize: 4096, format: tapFormat) { [weak self] buffer, _ in
+            self?.handleAudioBuffer(buffer)
+        }
 
         audioEngine.prepare()
 
         do {
             try audioEngine.start()
         } catch {
-            cleanupRecognition(cancelTask: true)
+            audioEngine.stop()
+            audioEngine.inputNode.removeTap(onBus: 0)
+            audioEngine.reset()
+            finishInputStream()
+            resultsTask.cancel()
+            await analyzer.cancelAndFinishNow()
+            resetSessionState()
+            logger.error("Audio engine failed to start: \(error.localizedDescription, privacy: .public)")
             throw error
         }
     }
 
     func finishCapture() async throws -> String {
-        guard isCapturing else {
+        guard withStateLock({ isCapturing }) else {
             throw DictationError.notCapturing
         }
 
-        guard
-            let recognitionRequest,
-            let resultBridge
-        else {
-            cleanupRecognition(cancelTask: true)
-            throw DictationError.noCapturedAudio
-        }
-
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
-        recognitionRequest.endAudio()
-        isCapturing = false
+        let session = stopCaptureSession()
         onAudioLevel?(0)
+        logger.info("Finishing dictation capture")
 
         do {
-            let text = try await resultBridge.awaitResult(timeoutNanoseconds: 6_000_000_000)
-            cleanupRecognition(cancelTask: false)
-            return text
+            if let analyzer = session.analyzer {
+                try await analyzer.finalizeAndFinishThroughEndOfInput()
+            }
+
+            try await session.resultsTask?.value
+
+            if let pipelineError = withStateLock({ self.pipelineError }) {
+                throw pipelineError
+            }
+
+            let rawText = withStateLock {
+                Self.combineSegments(finalizedSegments: finalSegments, volatileSegment: nil)
+            }
+
+            guard !rawText.isEmpty else {
+                logger.error("Dictation finished without recognized speech")
+                throw DictationError.noSpeechDetected
+            }
+
+            logger.info("Dictation finalized with \(rawText.count, privacy: .public) characters")
+            resetSessionState()
+            return rawText
         } catch {
-            cleanupRecognition(cancelTask: true)
+            session.resultsTask?.cancel()
+
+            if let analyzer = session.analyzer {
+                await analyzer.cancelAndFinishNow()
+            }
+
+            resetSessionState()
+            logger.error("Dictation finalization failed: \(error.localizedDescription, privacy: .public)")
             throw error
         }
     }
 
-    private func cleanupRecognition(cancelTask: Bool) {
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
+    func cancelCapture() async {
+        let session = stopCaptureSession()
+        session.resultsTask?.cancel()
 
-        if cancelTask {
-            recognitionTask?.cancel()
+        if let analyzer = session.analyzer {
+            await analyzer.cancelAndFinishNow()
         }
 
-        recognitionTask = nil
-        recognitionRequest = nil
-        speechRecognizer = nil
-        resultBridge = nil
-        isCapturing = false
+        logger.info("Dictation capture cancelled")
+        resetSessionState()
+    }
+
+    static func combineSegments(finalizedSegments: [String], volatileSegment: String?) -> String {
+        let pieces = finalizedSegments + [volatileSegment]
+        return pieces
+            .compactMap { segment in
+                guard let segment else { return nil }
+
+                let trimmed = segment.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : trimmed
+            }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func resolvedLocale(for language: AppLanguage) async throws -> Locale {
+        guard let locale = await SpeechTranscriber.supportedLocale(equivalentTo: language.locale) else {
+            throw DictationError.unsupportedLanguage(language.menuTitle)
+        }
+
+        return locale
+    }
+
+    private func makeInstallationProgressTask(
+        for request: AssetInstallationRequest,
+        generation: UInt64
+    ) -> Task<Void, Never> {
+        Task { [weak self] in
+            while !Task.isCancelled {
+                self?.emitLanguageModelStatus(
+                    .downloading(progress: Self.normalizedProgress(from: request.progress)),
+                    generation: generation
+                )
+
+                if request.progress.isFinished {
+                    break
+                }
+
+                try? await Task.sleep(nanoseconds: 200_000_000)
+            }
+        }
+    }
+
+    private func makeResultsTask(for transcriber: SpeechTranscriber) -> Task<Void, Error> {
+        Task { [weak self] in
+            guard let self else { return }
+
+            for try await result in transcriber.results {
+                try Task.checkCancellation()
+                consume(result: result)
+            }
+        }
+    }
+
+    private func consume(result: SpeechTranscriber.Result) {
+        let segment = String(result.text.characters)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !segment.isEmpty else { return }
+
+        let livePreview = withStateLock {
+            if result.isFinal {
+                finalSegments.append(segment)
+                volatileSegment = nil
+            } else {
+                volatileSegment = segment
+            }
+
+            return Self.combineSegments(
+                finalizedSegments: finalSegments,
+                volatileSegment: volatileSegment
+            )
+        }
+
+        logger.debug(
+            "Received \(result.isFinal ? "final" : "volatile", privacy: .public) segment with \(segment.count, privacy: .public) characters"
+        )
+        onLiveTranscript?(livePreview)
+    }
+
+    private func handleAudioBuffer(_ buffer: AVAudioPCMBuffer) {
+        onAudioLevel?(Self.normalizedLevel(for: buffer))
+
+        do {
+            guard let analyzerInput = try makeAnalyzerInput(from: buffer) else { return }
+            let continuation = withStateLock { inputContinuation }
+            continuation?.yield(analyzerInput)
+        } catch {
+            storePipelineError(error)
+            finishInputStream()
+        }
+    }
+
+    private func makeAnalyzerInput(from buffer: AVAudioPCMBuffer) throws -> AnalyzerInput? {
+        guard let analysisFormat = withStateLock({ analysisFormat }) else {
+            throw DictationError.analyzerSetupFailed
+        }
+
+        let analyzerBuffer: AVAudioPCMBuffer
+
+        if Self.formatsMatch(buffer.format, analysisFormat) {
+            analyzerBuffer = try Self.copyBuffer(buffer)
+        } else {
+            guard let convertedBuffer = try Self.convertBuffer(buffer, to: analysisFormat) else {
+                return nil
+            }
+
+            analyzerBuffer = convertedBuffer
+        }
+
+        let state = withStateLock {
+            submittedBufferCount += 1
+            let bufferIndex = submittedBufferCount
+            let startSample = submittedSampleCount
+            submittedSampleCount += Int64(analyzerBuffer.frameLength)
+            let bufferStartTime = Self.makeBufferStartTime(
+                sampleIndex: startSample,
+                sampleRate: analysisFormat.sampleRate
+            )
+            let shouldLog = bufferIndex <= 3 || bufferIndex.isMultiple(of: 50)
+            return (bufferIndex, shouldLog, bufferStartTime)
+        }
+
+        if state.1 {
+            logger.debug(
+                "Submitting audio buffer #\(state.0, privacy: .public) with \(analyzerBuffer.frameLength, privacy: .public) frames from \(buffer.format.sampleRate, privacy: .public)Hz to \(analysisFormat.sampleRate, privacy: .public)Hz"
+            )
+        }
+
+        guard analyzerBuffer.frameLength > 0 else {
+            return nil
+        }
+
+        return AnalyzerInput(buffer: analyzerBuffer, bufferStartTime: state.2)
+    }
+
+    private func stopCaptureSession() -> SessionSnapshot {
+        let audioEngine = withStateLock { self.audioEngine }
+        audioEngine?.stop()
+        audioEngine?.inputNode.removeTap(onBus: 0)
+        audioEngine?.reset()
+        finishInputStream()
+
+        return withStateLock {
+            isCapturing = false
+
+            return SessionSnapshot(
+                analyzer: analyzer,
+                resultsTask: resultsTask
+            )
+        }
+    }
+
+    private func finishInputStream() {
+        let continuation = withStateLock {
+            let continuation = inputContinuation
+            inputContinuation = nil
+            return continuation
+        }
+
+        continuation?.finish()
+    }
+
+    private func resetSessionState() {
+        withStateLock {
+            audioEngine = nil
+            analyzer = nil
+            transcriber = nil
+            analysisContext = nil
+            analysisFormat = nil
+            inputContinuation = nil
+            resultsTask = nil
+            submittedBufferCount = 0
+            submittedSampleCount = 0
+            finalSegments = []
+            volatileSegment = nil
+            pipelineError = nil
+            isCapturing = false
+        }
+
         onAudioLevel?(0)
+        onLiveTranscript?("")
+    }
+
+    private func storePipelineError(_ error: Error) {
+        withStateLock {
+            if pipelineError == nil {
+                pipelineError = error
+            }
+        }
+
+        logger.error("Audio pipeline failed: \(error.localizedDescription, privacy: .public)")
+    }
+
+    private func nextLanguageStatusGeneration() -> UInt64 {
+        withStateLock {
+            languageStatusGeneration += 1
+            return languageStatusGeneration
+        }
+    }
+
+    private func emitLanguageModelStatus(_ status: LanguageModelStatus, generation: UInt64) {
+        let callback: (@Sendable (LanguageModelStatus) -> Void)? = withStateLock {
+            guard languageStatusGeneration == generation else { return nil }
+            return onLanguageModelStatus
+        }
+
+        callback?(status)
+    }
+
+    private func withStateLock<T>(_ body: () -> T) -> T {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return body()
+    }
+
+    private func withStateLock<T>(_ body: () throws -> T) rethrows -> T {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return try body()
+    }
+
+    private static func makeTranscriber(locale: Locale) -> SpeechTranscriber {
+        SpeechTranscriber(
+            locale: locale,
+            transcriptionOptions: [],
+            reportingOptions: [.volatileResults, .fastResults],
+            attributeOptions: []
+        )
+    }
+
+    private static func normalizedProgress(from progress: Progress) -> Double? {
+        guard progress.totalUnitCount > 0 else { return nil }
+
+        let fraction = progress.fractionCompleted
+        guard fraction.isFinite else { return nil }
+
+        return max(0, min(1, fraction))
+    }
+
+    private static func convertBuffer(
+        _ buffer: AVAudioPCMBuffer,
+        to outputFormat: AVAudioFormat
+    ) throws -> AVAudioPCMBuffer? {
+        guard buffer.frameLength > 0 else { return nil }
+        guard let converter = AVAudioConverter(from: buffer.format, to: outputFormat) else {
+            throw DictationError.audioConversionFailed
+        }
+
+        let ratio = outputFormat.sampleRate / buffer.format.sampleRate
+        let estimatedFrameCapacity = max(1, Int(ceil(Double(buffer.frameLength) * ratio)))
+
+        guard
+            let convertedBuffer = AVAudioPCMBuffer(
+                pcmFormat: outputFormat,
+                frameCapacity: AVAudioFrameCount(estimatedFrameCapacity)
+            )
+        else {
+            throw DictationError.audioConversionFailed
+        }
+
+        let sourceBuffer = BufferBox(buffer)
+        var conversionError: NSError?
+        let status = converter.convert(to: convertedBuffer, error: &conversionError) { _, outStatus in
+            if let buffer = sourceBuffer.buffer {
+                outStatus.pointee = .haveData
+                sourceBuffer.buffer = nil
+                return buffer
+            }
+
+            outStatus.pointee = .endOfStream
+            return nil
+        }
+
+        if let conversionError {
+            throw conversionError
+        }
+
+        switch status {
+        case .haveData, .inputRanDry, .endOfStream:
+            return convertedBuffer.frameLength > 0 ? convertedBuffer : nil
+        case .error:
+            throw DictationError.audioConversionFailed
+        @unknown default:
+            throw DictationError.audioConversionFailed
+        }
+    }
+
+    private static func copyBuffer(_ buffer: AVAudioPCMBuffer) throws -> AVAudioPCMBuffer {
+        guard
+            let copiedBuffer = AVAudioPCMBuffer(
+                pcmFormat: buffer.format,
+                frameCapacity: buffer.frameLength
+            )
+        else {
+            throw DictationError.audioConversionFailed
+        }
+
+        copiedBuffer.frameLength = buffer.frameLength
+
+        let sourceBuffers = UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList)
+        let destinationBuffers = UnsafeMutableAudioBufferListPointer(copiedBuffer.mutableAudioBufferList)
+
+        guard sourceBuffers.count == destinationBuffers.count else {
+            throw DictationError.audioConversionFailed
+        }
+
+        for index in 0..<sourceBuffers.count {
+            let sourceBuffer = sourceBuffers[index]
+            let destinationBuffer = destinationBuffers[index]
+
+            guard
+                let sourceData = sourceBuffer.mData,
+                let destinationData = destinationBuffer.mData
+            else {
+                throw DictationError.audioConversionFailed
+            }
+
+            let byteCount = Int(sourceBuffer.mDataByteSize)
+            memcpy(destinationData, sourceData, byteCount)
+            destinationBuffers[index].mDataByteSize = sourceBuffer.mDataByteSize
+        }
+
+        return copiedBuffer
+    }
+
+    private static func makeBufferStartTime(
+        sampleIndex: Int64,
+        sampleRate: Double
+    ) -> CMTime? {
+        guard sampleIndex >= 0, sampleRate.isFinite, sampleRate > 0 else { return nil }
+
+        let roundedSampleRate = Int32(sampleRate.rounded())
+        guard roundedSampleRate > 0 else { return nil }
+
+        return CMTime(value: sampleIndex, timescale: roundedSampleRate)
+    }
+
+    private static func formatsMatch(_ lhs: AVAudioFormat, _ rhs: AVAudioFormat) -> Bool {
+        lhs.sampleRate == rhs.sampleRate &&
+        lhs.channelCount == rhs.channelCount &&
+        lhs.commonFormat == rhs.commonFormat &&
+        lhs.isInterleaved == rhs.isInterleaved
+    }
+
+    private static func preferredTapFormat(
+        for inputNode: AVAudioInputNode,
+        fallback inputFormat: AVAudioFormat
+    ) -> AVAudioFormat {
+        let outputFormat = inputNode.outputFormat(forBus: 0)
+
+        guard outputFormat.channelCount > 0, outputFormat.sampleRate > 0 else {
+            return inputFormat
+        }
+
+        return outputFormat
     }
 
     private static func normalizedLevel(for buffer: AVAudioPCMBuffer) -> Double {
@@ -192,53 +620,16 @@ final class DictationService: @unchecked Sendable {
     }
 }
 
-private final class RecognitionBridge: @unchecked Sendable {
-    private let lock = NSLock()
-    private var storedResult: Result<String, Error>?
-    private var continuation: CheckedContinuation<String, Error>?
+private struct SessionSnapshot {
+    let analyzer: SpeechAnalyzer?
+    let resultsTask: Task<Void, Error>?
+}
 
-    func deliver(_ result: Result<String, Error>) {
-        lock.lock()
-        defer { lock.unlock() }
+private final class BufferBox: @unchecked Sendable {
+    var buffer: AVAudioPCMBuffer?
 
-        guard storedResult == nil else { return }
-
-        if let continuation {
-            self.continuation = nil
-            continuation.resume(with: result)
-        } else {
-            storedResult = result
-        }
-    }
-
-    func awaitResult(timeoutNanoseconds: UInt64) async throws -> String {
-        try await withThrowingTaskGroup(of: String.self) { group in
-            group.addTask {
-                try await self.waitForResult()
-            }
-
-            group.addTask {
-                try await Task.sleep(nanoseconds: timeoutNanoseconds)
-                throw DictationError.timeout
-            }
-
-            let value = try await group.next()!
-            group.cancelAll()
-            return value
-        }
-    }
-
-    private func waitForResult() async throws -> String {
-        try await withCheckedThrowingContinuation { continuation in
-            lock.lock()
-            defer { lock.unlock() }
-
-            if let storedResult {
-                continuation.resume(with: storedResult)
-            } else {
-                self.continuation = continuation
-            }
-        }
+    init(_ buffer: AVAudioPCMBuffer) {
+        self.buffer = buffer
     }
 }
 
@@ -246,11 +637,11 @@ private enum DictationError: LocalizedError {
     case alreadyCapturing
     case notCapturing
     case noInputDevice
-    case noCapturedAudio
-    case unsupportedLanguage
-    case onDeviceRecognitionUnavailable
+    case unsupportedLanguage(String)
+    case modelPreparationFailed(String)
+    case audioConversionFailed
+    case analyzerSetupFailed
     case noSpeechDetected
-    case timeout
 
     var errorDescription: String? {
         switch self {
@@ -260,16 +651,16 @@ private enum DictationError: LocalizedError {
             return "No dictation capture is currently running."
         case .noInputDevice:
             return "No microphone input device is available."
-        case .noCapturedAudio:
-            return "No audio was captured."
-        case .unsupportedLanguage:
-            return "This language is not available for local dictation."
-        case .onDeviceRecognitionUnavailable:
-            return "On-device dictation is not available for the selected language."
+        case .unsupportedLanguage(let language):
+            return "Apple on-device transcription is not available for \(language) on this Mac."
+        case .modelPreparationFailed(let message):
+            return message
+        case .audioConversionFailed:
+            return "MyWhisper couldn't prepare microphone audio for transcription."
+        case .analyzerSetupFailed:
+            return "MyWhisper couldn't start Apple's speech analyzer."
         case .noSpeechDetected:
             return "No speech was detected."
-        case .timeout:
-            return "Transcription timed out."
         }
     }
 }

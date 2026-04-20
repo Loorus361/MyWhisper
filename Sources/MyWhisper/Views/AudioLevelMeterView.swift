@@ -5,17 +5,58 @@ struct AudioLevelMeterView: View {
     let level: Double
 
     var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .leading) {
-                Capsule(style: .continuous)
-                    .fill(.quaternary)
+        HStack(spacing: 7) {
+            ForEach(0..<12, id: \.self) { index in
+                let threshold = Double(index + 1) / 12
+                let isActive = level >= threshold - 0.08
+                let height = barHeight(for: index, isActive: isActive)
 
                 Capsule(style: .continuous)
-                    .fill(Color.accentColor)
-                    .frame(width: max(10, geometry.size.width * level))
+                    .fill(barFill(isActive: isActive, index: index))
+                    .frame(width: 10, height: height)
+                    .overlay {
+                        Capsule(style: .continuous)
+                            .strokeBorder(.white.opacity(isActive ? 0.18 : 0.08), lineWidth: 0.8)
+                    }
+                    .shadow(
+                        color: isActive ? Color.accentColor.opacity(0.18) : .clear,
+                        radius: 8,
+                        y: 2
+                    )
+                    .animation(.spring(response: 0.2, dampingFraction: 0.72), value: level)
             }
         }
-        .frame(height: 10)
-        .animation(.easeOut(duration: 0.12), value: level)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white.opacity(0.09), in: Capsule(style: .continuous))
+        .overlay {
+            Capsule(style: .continuous)
+                .strokeBorder(.white.opacity(0.12), lineWidth: 0.8)
+        }
+    }
+
+    private func barHeight(for index: Int, isActive: Bool) -> CGFloat {
+        let baseHeights: [CGFloat] = [10, 14, 18, 23, 28, 33, 33, 28, 23, 18, 14, 10]
+        let base = baseHeights[index]
+        return isActive ? base : max(8, base * 0.42)
+    }
+
+    private func barFill(isActive: Bool, index: Int) -> some ShapeStyle {
+        if isActive {
+            let hueShift = Double(index) / 24
+            return AnyShapeStyle(
+                LinearGradient(
+                    colors: [
+                        Color.accentColor.opacity(0.55 + hueShift * 0.18),
+                        .white.opacity(0.90)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+        }
+
+        return AnyShapeStyle(.white.opacity(0.16))
     }
 }
