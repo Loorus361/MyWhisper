@@ -28,7 +28,7 @@ struct MyWhisperApp: App {
 
         Settings {
             SettingsView(model: model)
-                .frame(minWidth: 520, minHeight: 440)
+                .frame(minWidth: 580, minHeight: 700)
         }
     }
 }

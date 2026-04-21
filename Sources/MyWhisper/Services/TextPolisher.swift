@@ -1,8 +1,12 @@
-// Applies the current lightweight local cleanup pass to raw transcribed text.
+// Applies the deterministic cleanup pass used by the Clean text polish profile.
 import Foundation
 
-enum TextPolisher {
-    static func polish(_ rawText: String, language: AppLanguage) -> String {
+protocol DeterministicTextPolishing: Sendable {
+    func polish(_ rawText: String, language: AppLanguage) -> String
+}
+
+struct DeterministicTextPolisher: DeterministicTextPolishing, Sendable {
+    func polish(_ rawText: String, language: AppLanguage) -> String {
         let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return trimmed }
 

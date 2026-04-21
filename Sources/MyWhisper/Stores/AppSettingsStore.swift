@@ -5,7 +5,14 @@ final class AppSettingsStore {
     func load() -> AppSettings {
         do {
             let data = try Data(contentsOf: PersistencePaths.settingsURL)
-            return try JSONDecoder().decode(AppSettings.self, from: data)
+            let settings = try JSONDecoder().decode(AppSettings.self, from: data)
+            let normalizedData = try JSONEncoder().encode(settings)
+
+            if normalizedData != data {
+                try normalizedData.write(to: PersistencePaths.settingsURL, options: .atomic)
+            }
+
+            return settings
         } catch {
             return AppSettings()
         }

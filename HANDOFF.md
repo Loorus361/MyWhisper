@@ -11,10 +11,12 @@ Aktuelle Produktform:
 - globaler Hotkey: `Control + Option + S`
 - lokale Transkription mit Apples Speech-Stack
 - Sprachen: Deutsch und Englisch (US)
+- Text-Polish-Profile: `Clean`, `Rewrite`, `Custom`
+- Apple-Intelligence-Rewrite fuer `Rewrite` und `Custom`
 - final-only Einfuegen in andere Apps via Clipboard + `Cmd+V`
 - Overlay mit Status, Live-Zustand und Pegelanzeige
 - lokale History mit `rawText` und `finalText`
-- Settings fuer Sprache und Berechtigungen
+- Settings fuer Sprache, Berechtigungen und sichtbare Text-Polish-Prompts
 
 ## Was in diesem Thread umgesetzt wurde
 
@@ -74,6 +76,28 @@ Die Transcriber-Konfiguration wurde auf progressive Live-Ergebnisse angepasst:
 
 Das war noetig, weil nur `volatileResults` allein in der Praxis nicht die gewuenschte Live-Preview geliefert hat.
 
+### 5. Text-Polish-Stack mit Apple Intelligence
+
+Die App hat jetzt einen expliziten Text-Polish-Pfad statt nur eines simplen Cleanup-Schritts:
+
+- `Clean` nutzt weiter lokalen deterministischen Cleanup
+- `Rewrite` und `Custom` nutzen `FoundationModels`
+- die AI-Prompts sind in den Settings sichtbar und editierbar
+- `Clean` zeigt seinen Regeltext read-only
+
+Technische Struktur:
+
+- `TextPolishCoordinator` entscheidet ueber Profilrouting und Fallback
+- `DeterministicTextPolisher` implementiert `Clean`
+- `AppleIntelligenceTextPolisher` kapselt `SystemLanguageModel` und `LanguageModelSession`
+- `AppSettings` persistiert Profilauswahl und Prompt-Texte
+
+Wichtige Laufzeitregel:
+
+- AI-Profile sind nicht garantiert verfuegbar
+- bei nicht verfuegbarem Apple-Intelligence-Zustand faellt die Auswahl auf `Clean` zurueck
+- beim eigentlichen AI-Generierungsfehler bricht der aktuelle Dictation-Durchlauf weiterhin mit Fehleranzeige ab statt still auf `Clean` zu wechseln
+
 ## Aktueller funktionaler Stand
 
 ### Funktioniert
@@ -85,6 +109,8 @@ Das war noetig, weil nur `volatileResults` allein in der Praxis nicht die gewuen
 - Loslassen finalisiert den Text
 - finaler Text wird in andere Apps eingefuegt
 - mehrere Shortcut-Durchlaeufe hintereinander sind stabil
+- Text-Polish-Profile werden persisted und bei alten Settings migriert
+- `Rewrite` und `Custom` koennen in den Settings direkt ueber ihre Prompts angepasst werden
 
 ### Funktioniert, aber ist gestalterisch noch nicht gut
 
@@ -114,6 +140,9 @@ Zentrale Dateien fuer den aktuellen Stand:
 - `script/build_and_run.sh`
 - `AGENTS.md`
 - `Sources/MyWhisper/Services/AppModel.swift`
+- `Sources/MyWhisper/Services/TextPolishCoordinator.swift`
+- `Sources/MyWhisper/Services/AppleIntelligenceTextPolisher.swift`
+- `Sources/MyWhisper/Models/TextPolishProfile.swift`
 - `Sources/MyWhisper/Services/DictationService.swift`
 - `Sources/MyWhisper/Services/OverlayWindowController.swift`
 - `Sources/MyWhisper/Views/OverlayView.swift`
@@ -131,6 +160,15 @@ Dieser Stand wurde bereits erfolgreich verifiziert mit:
 - `swift test`
 - `./script/build_and_run.sh --verify`
 
+Fuer den neuen Text-Polish-Stack wurde lokal verifiziert:
+
+- `swift build`
+- `swift test`
+
+Noch offen:
+
+- reale manuelle Rewrite-Verifikation mit aktivem Apple Intelligence auf diesem Mac
+
 ## Offene Baustellen
 
 ### Hochprioritaer
@@ -145,7 +183,8 @@ Dieser Stand wurde bereits erfolgreich verifiziert mit:
 
 ### Spaeter moeglich
 
-- weitere Optimierung der Text-Polish-Logik
+- weitere Optimierung der Text-Polish-Prompts anhand echter Diktatbeispiele
+- echte Runtime-Verifikation des Apple-Intelligence-Pfads auf einer Maschine mit aktivem Apple Intelligence
 - breitere Settings-/History-Verbesserungen
 - Launch-at-login oder weitere Produktfeatures
 
@@ -156,9 +195,11 @@ Wenn du die Arbeit fortsetzt:
 1. Lies zuerst `AGENTS.md`.
 2. Lies danach `AppModel.swift` und `DictationService.swift`.
 3. Behandle den aktuellen SpeechAnalyzer-Pfad als die neue einzige lokale Backend-Implementierung.
-4. Fasse den Overlay-Stand nicht als final auf.
-5. Regressionsrisiko aktuell vor allem bei:
+4. Lies danach auch den Text-Polish-Pfad in `TextPolishCoordinator.swift` und `AppleIntelligenceTextPolisher.swift`.
+5. Fasse den Overlay-Stand nicht als final auf.
+6. Regressionsrisiko aktuell vor allem bei:
    - `AVAudioEngine`-Session-Lifecycle
+   - Apple-Intelligence-Availability und Prompt-Verhalten
    - Live-Preview-UI
    - Paste-Finalisierung nach Hotkey-Release
 
@@ -168,6 +209,7 @@ Zum Zeitpunkt dieser Uebergabe gibt es lokale Aenderungen im Working Tree, inklu
 
 - `Sources/MyWhisper/Models/LanguageModelStatus.swift`
 - `Sources/MyWhisper/Views/LiveTranscriptFlowView.swift`
+- neue Text-Polish-Modelle und Services
 - mehrere geaenderte Service-, View-, Test- und Build-Dateien
 
 Vor weiterem Umbau zuerst `git status` pruefen und keine fremden Aenderungen verwerfen.

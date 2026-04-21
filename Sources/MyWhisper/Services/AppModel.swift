@@ -15,14 +15,15 @@ final class AppModel {
     var liveTranscriptPreview: String = ""
     var selectedLanguageModelStatus: LanguageModelStatus = .idle
     var lastErrorMessage: String?
+    var textPolishSelectionMessage: String?
 
     let hotkeyDisplay = "Control + Option + S"
-    let activeProfileName = "Standard"
 
     private let settingsStore = AppSettingsStore()
     private let historyStore = HistoryStore()
     private let permissionService = PermissionService()
     private let pasteService = ClipboardPasteService()
+    private let textPolishCoordinator: any TextPolishCoordinating
     private let dictationService: DictationService
     private let hotkeyService: HotkeyService
     private let overlayController: OverlayWindowController
@@ -38,6 +39,7 @@ final class AppModel {
         self.settings = settingsStore.load()
         self.history = historyStore.load()
         self.permissionSnapshot = permissionService.snapshot()
+        self.textPolishCoordinator = TextPolishCoordinator()
         self.dictationService = DictationService(contextualStrings: AppConstants.defaultContextualStrings)
         self.hotkeyService = HotkeyService(
             keyCode: UInt32(kVK_ANSI_S),
@@ -91,6 +93,7 @@ final class AppModel {
         selectedLanguageModelStatus = preparedLanguageIDs.contains(settings.selectedLanguage.localeIdentifier)
             ? .ready
             : .idle
+        reconcileTextPolishSelection(persist: true)
         schedulePreparationIfPossible(for: settings.selectedLanguage)
     }
 
@@ -98,8 +101,49 @@ final class AppModel {
         history.first
     }
 
+    var textPolishProfiles: [TextPolishProfile] {
+        settings.textPolishProfiles
+    }
+
+    var selectedTextPolishProfile: TextPolishProfile {
+        settings.selectedTextPolishProfile
+    }
+
+    var activeProfileName: String {
+        selectedTextPolishProfile.name
+    }
+
+    var selectedTextPolishBackendLabel: String {
+        selectedTextPolishProfile.backend.displayName
+    }
+
+    var selectedTextPolishStatusText: String {
+        switch selectedTextPolishProfile.backend {
+        case .deterministic:
+            return "Fast local cleanup with simple filler-word removal and punctuation."
+        case .appleIntelligence:
+            return appleIntelligenceStatusText
+        }
+    }
+
+    var appleIntelligenceStatus: AppleIntelligenceStatus {
+        textPolishCoordinator.appleIntelligenceStatus(for: settings.selectedLanguage)
+    }
+
+    var appleIntelligenceStatusText: String {
+        appleIntelligenceStatus.displayText(for: settings.selectedLanguage)
+    }
+
+    var selectedTextPolishPrompt: String {
+        selectedTextPolishProfile.prompt
+    }
+
+    var selectedTextPolishPromptIsEditable: Bool {
+        selectedTextPolishProfile.isPromptEditable
+    }
+
     var overlayModeLabel: String {
-        activeProfileName
+        selectedTextPolishProfile.name
     }
 
     var overlayStatusText: String {
@@ -134,12 +178,65 @@ final class AppModel {
     }
 
     func updateLanguage(_ language: AppLanguage) {
-        settings.selectedLanguage = language
+        var updatedSettings = settings
+        updatedSettings.selectedLanguage = language
+        settings = updatedSettings
+        textPolishSelectionMessage = nil
         settingsStore.save(settings)
         liveTranscriptPreview = ""
         lastErrorMessage = nil
         selectedLanguageModelStatus = preparedLanguageIDs.contains(language.localeIdentifier) ? .ready : .idle
+        reconcileTextPolishSelection(persist: true)
         schedulePreparationIfPossible(for: language)
+    }
+
+    func updateTextPolishProfile(_ id: TextPolishProfileID) {
+        guard let profile = settings.textPolishProfile(for: id) else { return }
+
+        switch textPolishCoordinator.availability(for: profile, language: settings.selectedLanguage) {
+        case .available:
+            var updatedSettings = settings
+            updatedSettings.selectedTextPolishProfileID = id
+            settings = updatedSettings
+            textPolishSelectionMessage = nil
+            settingsStore.save(settings)
+        case .unavailable(let reason):
+            textPolishSelectionMessage = AppleIntelligenceStatus.unavailable(reason).fallbackMessage(
+                for: profile.name,
+                language: settings.selectedLanguage
+            )
+        }
+    }
+
+    func updateSelectedTextPolishPrompt(_ prompt: String) {
+        guard selectedTextPolishPromptIsEditable else { return }
+
+        var updatedSettings = settings
+        updatedSettings.updatePrompt(prompt, for: selectedTextPolishProfile.id)
+        settings = updatedSettings
+        settingsStore.save(settings)
+    }
+
+    func resetSelectedTextPolishPrompt() {
+        guard selectedTextPolishPromptIsEditable else { return }
+
+        var updatedSettings = settings
+        updatedSettings.resetPrompt(for: selectedTextPolishProfile.id)
+        settings = updatedSettings
+        settingsStore.save(settings)
+    }
+
+    func refreshTextPolishAvailability() {
+        reconcileTextPolishSelection(persist: true)
+    }
+
+    func isTextPolishProfileSelectable(_ profile: TextPolishProfile) -> Bool {
+        switch textPolishCoordinator.availability(for: profile, language: settings.selectedLanguage) {
+        case .available:
+            return true
+        case .unavailable:
+            return false
+        }
     }
 
     func retrySelectedLanguagePreparation() async {
@@ -182,6 +279,34 @@ final class AppModel {
 
     private func refreshPermissions() {
         permissionSnapshot = permissionService.snapshot()
+    }
+
+    private func reconcileTextPolishSelection(persist: Bool) {
+        let resolvedProfileID = textPolishCoordinator.resolvedProfileID(in: settings)
+        guard resolvedProfileID != settings.selectedTextPolishProfileID else { return }
+
+        let previousProfile = settings.selectedTextPolishProfile
+        let availability = textPolishCoordinator.availability(
+            for: previousProfile,
+            language: settings.selectedLanguage
+        )
+
+        var updatedSettings = settings
+        updatedSettings.selectedTextPolishProfileID = resolvedProfileID
+        settings = updatedSettings
+
+        if case .unavailable(let reason) = availability {
+            textPolishSelectionMessage = AppleIntelligenceStatus.unavailable(reason).fallbackMessage(
+                for: previousProfile.name,
+                language: settings.selectedLanguage
+            )
+        } else {
+            textPolishSelectionMessage = nil
+        }
+
+        if persist {
+            settingsStore.save(settings)
+        }
     }
 
     private func handleHotkeyPressed() async {
@@ -238,12 +363,18 @@ final class AppModel {
 
         do {
             let rawText = try await dictationService.finishCapture()
-            let finalText = TextPolisher.polish(rawText, language: settings.selectedLanguage)
+            let selectedProfile = selectedTextPolishProfile
+            let finalText = try await textPolishCoordinator.polish(
+                rawText,
+                language: settings.selectedLanguage,
+                profile: selectedProfile
+            )
 
             try pasteService.paste(finalText)
 
             let record = TranscriptionRecord(
                 language: settings.selectedLanguage,
+                profileName: selectedProfile.name,
                 rawText: rawText,
                 finalText: finalText
             )

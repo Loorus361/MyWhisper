@@ -1,4 +1,4 @@
-// Presents the settings form for language defaults, permissions, storage, and roadmap notes.
+// Presents the settings form for language defaults, permissions, polish modes, and storage.
 import SwiftUI
 
 struct SettingsView: View {
@@ -23,6 +23,73 @@ struct SettingsView: View {
                 LabeledContent("Profile", value: model.activeProfileName)
 
                 Text("MyWhisper uses the current macOS default input device. Raw and final text are stored locally in the history.")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section("Text Polish") {
+                Picker(
+                    "Mode",
+                    selection: Binding(
+                        get: { model.selectedTextPolishProfile.id },
+                        set: { model.updateTextPolishProfile($0) }
+                    )
+                ) {
+                    ForEach(model.textPolishProfiles) { profile in
+                        Text(profilePickerTitle(for: profile))
+                            .tag(profile.id)
+                            .disabled(!model.isTextPolishProfileSelectable(profile))
+                    }
+                }
+
+                LabeledContent("Backend", value: model.selectedTextPolishBackendLabel)
+
+                Text(model.selectedTextPolishStatusText)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                LabeledContent("Apple Intelligence", value: model.appleIntelligenceStatusText)
+
+                if let textPolishSelectionMessage = model.textPolishSelectionMessage {
+                    Text(textPolishSelectionMessage)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Prompt")
+                        .font(.headline)
+
+                    if model.selectedTextPolishPromptIsEditable {
+                        TextEditor(
+                            text: Binding(
+                                get: { model.selectedTextPolishPrompt },
+                                set: { model.updateSelectedTextPolishPrompt($0) }
+                            )
+                        )
+                        .font(.system(.body, design: .monospaced))
+                        .frame(minHeight: 150)
+
+                        HStack {
+                            Spacer()
+
+                            Button("Reset Prompt") {
+                                model.resetSelectedTextPolishPrompt()
+                            }
+                        }
+                    } else {
+                        ScrollView {
+                            Text(model.selectedTextPolishPrompt)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
+                        }
+                        .frame(minHeight: 120)
+                        .padding(12)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                }
+
+                Text("Rewrite and Custom use Apple Intelligence fully on-device and wait for the rewritten result before pasting.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -78,15 +145,20 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-
-            Section("Roadmap") {
-                Text("Later versions can add Apple on-device polish, Cloud polish, custom modes, and richer history tools.")
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
         }
         .formStyle(.grouped)
         .padding(20)
+        .onAppear {
+            model.refreshTextPolishAvailability()
+        }
+    }
+
+    private func profilePickerTitle(for profile: TextPolishProfile) -> String {
+        guard !model.isTextPolishProfileSelectable(profile) else {
+            return profile.name
+        }
+
+        return "\(profile.name) (Unavailable)"
     }
 }
 

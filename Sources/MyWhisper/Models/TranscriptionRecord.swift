@@ -13,7 +13,7 @@ struct TranscriptionRecord: Codable, Identifiable, Equatable {
         id: UUID = UUID(),
         timestamp: Date = .now,
         language: AppLanguage,
-        profileName: String = "Standard",
+        profileName: String = "Clean",
         rawText: String,
         finalText: String
     ) {

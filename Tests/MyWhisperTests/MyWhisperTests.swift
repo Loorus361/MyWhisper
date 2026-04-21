@@ -1,4 +1,5 @@
 // Holds the Swift Testing target for MyWhisper logic as the app grows.
+import Foundation
 import Testing
 @testable import MyWhisper
 
@@ -49,4 +50,159 @@ import Testing
         LanguageModelStatus.failed("Network timeout").displayText
             == "Preparation failed: Network timeout"
     )
+}
+
+@Test func appSettingsMigrationAddsTextPolishDefaults() throws {
+    let data = #"{"selectedLanguage":"german"}"#.data(using: .utf8)!
+    let settings = try JSONDecoder().decode(AppSettings.self, from: data)
+
+    #expect(settings.selectedLanguage == .german)
+    #expect(settings.selectedTextPolishProfileID == .clean)
+    #expect(settings.textPolishProfiles == TextPolishProfile.defaultProfiles)
+}
+
+@Test func appSettingsSupplementPreservesStoredPrompt() throws {
+    let data = """
+    {
+      "selectedLanguage": "englishUS",
+      "selectedTextPolishProfileID": "custom",
+      "textPolishProfiles": [
+        {
+          "id": "custom",
+          "name": "Custom",
+          "backend": "appleIntelligence",
+          "prompt": "Make the text extra concise."
+        }
+      ]
+    }
+    """.data(using: .utf8)!
+
+    let settings = try JSONDecoder().decode(AppSettings.self, from: data)
+
+    #expect(settings.selectedTextPolishProfileID == .custom)
+    #expect(settings.textPolishProfiles.count == 3)
+    #expect(settings.selectedTextPolishProfile.prompt == "Make the text extra concise.")
+    #expect(settings.textPolishProfile(for: .rewrite)?.prompt == TextPolishProfile.defaultProfile(for: .rewrite).prompt)
+}
+
+@Test func deterministicTextPolisherRemovesFillersAndAddsPunctuation() {
+    let polisher = DeterministicTextPolisher()
+    let result = polisher.polish("ähm hallo zusammen das ist ein test", language: .german)
+
+    #expect(result == "Hallo zusammen das ist ein test.")
+}
+
+@Test func textPolishCoordinatorRoutesCleanThroughDeterministicBackend() async throws {
+    let deterministicSpy = DeterministicTextPolisherSpy(result: "Clean result.")
+    let appleSpy = AppleIntelligenceTextPolisherSpy(result: "AI result", status: .available)
+    let coordinator = TextPolishCoordinator(
+        deterministicPolisher: deterministicSpy,
+        appleIntelligencePolisher: appleSpy
+    )
+
+    let result = try await coordinator.polish(
+        "raw",
+        language: .german,
+        profile: TextPolishProfile.defaultProfile(for: .clean)
+    )
+
+    #expect(result == "Clean result.")
+    #expect(deterministicSpy.callCount == 1)
+    #expect(appleSpy.callCount == 0)
+}
+
+@Test func textPolishCoordinatorRoutesRewriteThroughAppleIntelligence() async throws {
+    let deterministicSpy = DeterministicTextPolisherSpy(result: "Clean result.")
+    let appleSpy = AppleIntelligenceTextPolisherSpy(result: "AI result", status: .available)
+    let coordinator = TextPolishCoordinator(
+        deterministicPolisher: deterministicSpy,
+        appleIntelligencePolisher: appleSpy
+    )
+    let profile = TextPolishProfile.defaultProfile(for: .rewrite)
+
+    let result = try await coordinator.polish(
+        "raw",
+        language: .englishUS,
+        profile: profile
+    )
+
+    #expect(result == "AI result")
+    #expect(deterministicSpy.callCount == 0)
+    #expect(appleSpy.callCount == 1)
+    #expect(appleSpy.lastProfile?.id == profile.id)
+}
+
+@Test func textPolishCoordinatorFallsBackToCleanForUnavailableAIProfile() {
+    let coordinator = TextPolishCoordinator(
+        deterministicPolisher: DeterministicTextPolisherSpy(result: "Clean result."),
+        appleIntelligencePolisher: AppleIntelligenceTextPolisherSpy(
+            result: "AI result",
+            status: .unavailable(.modelNotReady)
+        )
+    )
+    let settings = AppSettings(
+        selectedLanguage: .german,
+        selectedTextPolishProfileID: .rewrite,
+        textPolishProfiles: TextPolishProfile.defaultProfiles
+    )
+
+    #expect(coordinator.resolvedProfileID(in: settings) == .clean)
+}
+
+@Test func appleIntelligenceStatusDisplaysUnsupportedLanguage() {
+    let status = AppleIntelligenceStatus.unavailable(.unsupportedLanguage(.german))
+
+    #expect(
+        status.displayText(for: .german)
+            == "Apple Intelligence text polish does not support Deutsch yet."
+    )
+}
+
+@Test func appleIntelligencePromptCompositionKeepsRawTextOutOfInstructions() {
+    let polisher = AppleIntelligenceTextPolisher()
+    let profile = TextPolishProfile.defaultProfile(for: .rewrite)
+    let rawText = "Hallo zusammen, also äh das wollte ich noch sagen"
+    let instructions = polisher.sessionInstructions(for: profile, language: .german)
+    let prompt = polisher.prompt(for: rawText)
+
+    #expect(instructions.contains("Keep the response in the same language as the input text."))
+    #expect(instructions.contains(profile.prompt))
+    #expect(!instructions.contains(rawText))
+    #expect(prompt.contains(rawText))
+}
+
+private final class DeterministicTextPolisherSpy: DeterministicTextPolishing, @unchecked Sendable {
+    private(set) var callCount = 0
+    private let result: String
+
+    init(result: String) {
+        self.result = result
+    }
+
+    func polish(_ rawText: String, language: AppLanguage) -> String {
+        callCount += 1
+        return result
+    }
+}
+
+private final class AppleIntelligenceTextPolisherSpy: AppleIntelligenceTextPolishing, @unchecked Sendable {
+    private(set) var callCount = 0
+    private(set) var lastProfile: TextPolishProfile?
+    private let result: String
+    private let status: AppleIntelligenceStatus
+
+    init(result: String, status: AppleIntelligenceStatus) {
+        self.result = result
+        self.status = status
+    }
+
+    func availability(for language: AppLanguage) -> AppleIntelligenceStatus {
+        status
+    }
+
+    func polish(_ rawText: String, language: AppLanguage, profile: TextPolishProfile) async throws -> String {
+        callCount += 1
+        lastProfile = profile
+        return result
+    }
 }

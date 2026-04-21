@@ -9,10 +9,12 @@ The current product shape is:
 - global hotkey: `Control + Option + S`
 - local speech-to-text using Apple's speech stack
 - language selection: German and English (US)
+- text polish profiles: `Clean`, `Rewrite`, `Custom`
+- on-device rewrite via Apple Intelligence for `Rewrite` and `Custom`
 - system-wide insertion through clipboard set -> paste -> clipboard restore
 - floating overlay with status and audio level meter
 - local history storing both raw and final text
-- settings window for permissions and language defaults
+- settings window for permissions, language defaults, and text polish prompts
 
 The app is intentionally macOS-first and personal-tool-first. Favor reliability, latency, and clarity over broad feature scope.
 
@@ -49,15 +51,18 @@ The current happy-path dictation flow is:
 4. The overlay shows listening state, live audio level, and volatile live transcription inside the app.
 5. User releases the hotkey.
 6. `DictationService` ends audio input and awaits a finalized transcription result.
-7. `TextPolisher` applies lightweight cleanup to the raw text.
-8. `ClipboardPasteService` pastes the final text into the focused app and restores the previous clipboard.
-9. The app stores raw and final text in history, grouped later by day and session.
+7. `TextPolishCoordinator` resolves the selected text polish profile for the current language.
+8. `DeterministicTextPolisher` handles `Clean`, while `AppleIntelligenceTextPolisher` handles `Rewrite` and `Custom` through `FoundationModels`.
+9. `ClipboardPasteService` pastes the final text into the focused app and restores the previous clipboard.
+10. The app stores raw text, final text, and the applied polish profile in history, grouped later by day and session.
 
 If you need to reason about app behavior, start with:
 
 - `Sources/MyWhisper/Services/AppModel.swift`
 - `Sources/MyWhisper/Services/DictationService.swift`
 - `Sources/MyWhisper/Services/ClipboardPasteService.swift`
+- `Sources/MyWhisper/Services/TextPolishCoordinator.swift`
+- `Sources/MyWhisper/Services/AppleIntelligenceTextPolisher.swift`
 
 ## Key Architectural Rules
 
@@ -69,8 +74,12 @@ If you need to reason about app behavior, start with:
   Views should render state and forward actions, not encode runtime workflow.
 - Keep raw transcription and polished text distinct.
   Recognition quality and polish quality are separate concerns in this product.
+- Keep the text polish profile model explicit.
+  `Clean` is deterministic and fast; `Rewrite` and `Custom` are on-device AI profiles with user-visible prompts.
 - Preserve local-first behavior by default.
   Cloud features, if added later, should be optional and isolated behind explicit settings or profile choices.
+- Treat Apple Intelligence as optional runtime capability, not a guaranteed dependency.
+  Unsupported devices, disabled Apple Intelligence, model-not-ready states, or unsupported locales must keep the app usable by falling back to `Clean`.
 - Avoid broad refactors that merge unrelated responsibilities back into one file.
   The current split is intentional and should stay readable for both humans and coding agents.
 
@@ -125,7 +134,10 @@ Local app data currently lives under Application Support using the bundle identi
 Important persisted data:
 
 - settings JSON
+- selected text polish profile ID
+- visible prompts for `Rewrite` and `Custom`
 - history JSON containing raw and final transcripts
+- history profile names for the applied polish mode
 
 Do not silently change persistence schema without also planning a migration path.
 
@@ -147,7 +159,8 @@ Do not bloat the menu bar menu or overlay with debug-heavy UI unless the user ex
 At the time this file was written, the next likely areas of work are:
 
 - better recognition quality through contextual vocabulary
-- improved lightweight polishing
+- tuning the `Rewrite` and `Custom` prompts against real dictation samples
+- deciding whether `Clean` should stay purely deterministic or gain optional hybrid behavior later
 - launch-at-login support
 - richer settings and history controls
 
@@ -159,3 +172,4 @@ If you change priorities significantly, update this section so future agents get
 - Keep comments short and factual.
 - Prefer extending the existing structure over inventing a parallel architecture.
 - If you introduce a new workflow step, document it here when it materially affects how the repo should be understood.
+- If you change prompt defaults or polish-profile behavior, update both this file and `HANDOFF.md` so later agents can distinguish product intent from temporary prompt experiments.
