@@ -169,6 +169,26 @@ Noch offen:
 
 - reale manuelle Rewrite-Verifikation mit aktivem Apple Intelligence auf diesem Mac
 
+## Code-Qualitaets-Refactoring (2026-04-21)
+
+Ein vollstaendiger Code-Audit wurde durchgefuehrt und alle relevanten Befunde behoben.
+Alle Aenderungen sind in `main` gemergt und gepusht.
+
+### Umgesetzte Verbesserungen
+
+- **HistoryStore**: `save()` wirft jetzt und wird in `AppModel` separat vom Paste-Flow abgefangen — ein Speicherfehler zeigt keinen Fehler mehr, wenn der Text bereits erfolgreich eingefuegt wurde
+- **AppSettingsStore**: Fehler beim Laden und Speichern werden via OSLog protokolliert statt lautlos verworfen
+- **TextPolishProfile**: Force-Unwrap durch `preconditionFailure` mit erklaerenden Meldungen ersetzt
+- **PersistencePaths**: Force-Unwrap auf `FileManager.urls` durch `guard/preconditionFailure` ersetzt
+- **AppConstants**: Magic Numbers (350ms Clipboard-Delay, 4096 Audio-Buffer) als benannte Konstanten extrahiert
+- **DictationService**: Audio-Hardware-Validierung aus `startCapture()` in `makeAudioSetup(for:)` ausgelagert; `@unchecked Sendable`-Begründung kommentiert
+
+### Bewusst zurueckgestellte Punkte
+
+- **Testabdeckung**: 15 Tests fuer ~8000 LOC ist wenig. Wichtige Pfade ohne Tests: `AppModel`, `HistoryStore`/`AppSettingsStore`, `ClipboardPasteService`, Fehler-Handling in `DictationService`. Zurueckgestellt, weil plattformspezifisches Mocking (AVAudioEngine, Speech-APIs) ein eigenes Projekt ist.
+- **L1** (duplizierte Permission-Checks in `ensureReadyForDictation` vs. `schedulePreparationIfPossible`): Die beiden Funktionen tun strukturell Verschiedenes — Extraktion wuerde Verwirrung erzeugen statt Klarheit.
+- **L3** (`hotkeyDisplay` String von der echten Hotkey-Definition entkoppelt): Nur kosmetisch, kein Risiko.
+
 ## Offene Baustellen
 
 ### Hochprioritaer
@@ -183,6 +203,7 @@ Noch offen:
 
 ### Spaeter moeglich
 
+- Testabdeckung ausbauen (siehe oben)
 - weitere Optimierung der Text-Polish-Prompts anhand echter Diktatbeispiele
 - echte Runtime-Verifikation des Apple-Intelligence-Pfads auf einer Maschine mit aktivem Apple Intelligence
 - breitere Settings-/History-Verbesserungen
@@ -192,7 +213,7 @@ Noch offen:
 
 Wenn du die Arbeit fortsetzt:
 
-1. Lies zuerst `AGENTS.md`.
+1. Lies zuerst `AGENTS.md` und `CODEBASE.md`.
 2. Lies danach `AppModel.swift` und `DictationService.swift`.
 3. Behandle den aktuellen SpeechAnalyzer-Pfad als die neue einzige lokale Backend-Implementierung.
 4. Lies danach auch den Text-Polish-Pfad in `TextPolishCoordinator.swift` und `AppleIntelligenceTextPolisher.swift`.
@@ -203,13 +224,6 @@ Wenn du die Arbeit fortsetzt:
    - Live-Preview-UI
    - Paste-Finalisierung nach Hotkey-Release
 
-## Noch nicht commitet
+## Git-Stand
 
-Zum Zeitpunkt dieser Uebergabe gibt es lokale Aenderungen im Working Tree, inklusive neuer Dateien:
-
-- `Sources/MyWhisper/Models/LanguageModelStatus.swift`
-- `Sources/MyWhisper/Views/LiveTranscriptFlowView.swift`
-- neue Text-Polish-Modelle und Services
-- mehrere geaenderte Service-, View-, Test- und Build-Dateien
-
-Vor weiterem Umbau zuerst `git status` pruefen und keine fremden Aenderungen verwerfen.
+Working Tree ist sauber. Alle Aenderungen sind commitet und auf `origin/main` gepusht.
