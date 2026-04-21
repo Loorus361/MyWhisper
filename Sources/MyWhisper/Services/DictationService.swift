@@ -12,7 +12,6 @@ final class DictationService: @unchecked Sendable {
     var onLiveTranscript: (@Sendable (String) -> Void)?
     var onLanguageModelStatus: (@Sendable (LanguageModelStatus) -> Void)?
 
-    private let contextualStrings: [String]
     private let stateLock = NSLock()
     private let logger = Logger(subsystem: AppConstants.bundleIdentifier, category: "Dictation")
 
@@ -30,10 +29,6 @@ final class DictationService: @unchecked Sendable {
     private var pipelineError: Error?
     private var isCapturing = false
     private var languageStatusGeneration: UInt64 = 0
-
-    init(contextualStrings: [String]) {
-        self.contextualStrings = contextualStrings
-    }
 
     func prepare(language: AppLanguage) async throws {
         let generation = nextLanguageStatusGeneration()
@@ -96,7 +91,7 @@ final class DictationService: @unchecked Sendable {
         }
     }
 
-    func startCapture(language: AppLanguage) async throws {
+    func startCapture(language: AppLanguage, contextualStrings: [String]) async throws {
         guard !withStateLock({ isCapturing }) else {
             throw DictationError.alreadyCapturing
         }
@@ -105,7 +100,7 @@ final class DictationService: @unchecked Sendable {
         let modules: [any SpeechModule] = [audio.transcriber]
 
         let analysisContext = AnalysisContext()
-        analysisContext.contextualStrings[.general] = contextualStrings
+        analysisContext.contextualStrings[.general] = AppSettings.normalizedVocabulary(from: contextualStrings)
 
         let analyzer = SpeechAnalyzer(modules: modules)
         try await analyzer.setContext(analysisContext)

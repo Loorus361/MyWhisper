@@ -40,7 +40,7 @@ final class AppModel {
         self.history = historyStore.load()
         self.permissionSnapshot = permissionService.snapshot()
         self.textPolishCoordinator = TextPolishCoordinator()
-        self.dictationService = DictationService(contextualStrings: AppConstants.defaultContextualStrings)
+        self.dictationService = DictationService()
         self.hotkeyService = HotkeyService(
             keyCode: UInt32(kVK_ANSI_S),
             modifiers: UInt32(controlKey | optionKey)
@@ -142,6 +142,10 @@ final class AppModel {
         selectedTextPolishProfile.isPromptEditable
     }
 
+    var dictationVocabularyText: String {
+        settings.dictationVocabulary.joined(separator: "\n")
+    }
+
     var overlayModeLabel: String {
         selectedTextPolishProfile.name
     }
@@ -222,6 +226,20 @@ final class AppModel {
 
         var updatedSettings = settings
         updatedSettings.resetPrompt(for: selectedTextPolishProfile.id)
+        settings = updatedSettings
+        settingsStore.save(settings)
+    }
+
+    func updateDictationVocabularyText(_ text: String) {
+        var updatedSettings = settings
+        updatedSettings.updateDictationVocabulary(text.components(separatedBy: .newlines))
+        settings = updatedSettings
+        settingsStore.save(settings)
+    }
+
+    func resetDictationVocabulary() {
+        var updatedSettings = settings
+        updatedSettings.resetDictationVocabulary()
         settings = updatedSettings
         settingsStore.save(settings)
     }
@@ -334,7 +352,10 @@ final class AppModel {
         overlayController.show()
 
         do {
-            try await dictationService.startCapture(language: settings.selectedLanguage)
+            try await dictationService.startCapture(
+                language: settings.selectedLanguage,
+                contextualStrings: settings.dictationVocabulary
+            )
 
             guard isHotkeyHeld else {
                 await dictationService.cancelCapture()

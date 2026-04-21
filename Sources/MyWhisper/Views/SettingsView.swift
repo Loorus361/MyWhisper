@@ -4,6 +4,8 @@ import SwiftUI
 struct SettingsView: View {
     let model: AppModel
 
+    @State private var dictationVocabularyDraft = ""
+
     var body: some View {
         Form {
             Section("Input") {
@@ -89,9 +91,31 @@ struct SettingsView: View {
                     }
                 }
 
-                Text("Minimal, Rewrite, and Custom use Apple Intelligence fully on-device and wait for the rewritten result before pasting.")
+                Text("Minimal, Technical, Rewrite, and Custom use Apple Intelligence fully on-device and wait for the rewritten result before pasting.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section("Vocabulary") {
+                TextEditor(text: $dictationVocabularyDraft)
+                .font(.system(.body, design: .monospaced))
+                .frame(minHeight: 120)
+                .onChange(of: dictationVocabularyDraft) { _, newValue in
+                    model.updateDictationVocabularyText(newValue)
+                }
+
+                HStack {
+                    Text("One word or phrase per line. This is the full speech-recognition vocabulary hint list.")
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Spacer()
+
+                    Button("Reset Vocabulary") {
+                        model.resetDictationVocabulary()
+                        dictationVocabularyDraft = model.dictationVocabularyText
+                    }
+                }
             }
 
             Section("Permissions") {
@@ -150,6 +174,7 @@ struct SettingsView: View {
         .padding(20)
         .onAppear {
             model.refreshTextPolishAvailability()
+            dictationVocabularyDraft = model.dictationVocabularyText
         }
     }
 

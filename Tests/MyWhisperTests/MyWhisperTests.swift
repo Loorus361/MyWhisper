@@ -59,6 +59,7 @@ import Testing
     #expect(settings.selectedLanguage == .german)
     #expect(settings.selectedTextPolishProfileID == .clean)
     #expect(settings.textPolishProfiles == TextPolishProfile.defaultProfiles)
+    #expect(settings.dictationVocabulary == AppSettings.defaultDictationVocabulary)
 }
 
 @Test func appSettingsSupplementPreservesStoredPrompt() throws {
@@ -80,18 +81,44 @@ import Testing
     let settings = try JSONDecoder().decode(AppSettings.self, from: data)
 
     #expect(settings.selectedTextPolishProfileID == .custom)
-    #expect(settings.textPolishProfiles.count == 4)
+    #expect(settings.textPolishProfiles.count == 5)
     #expect(settings.selectedTextPolishProfile.prompt == "Make the text extra concise.")
     #expect(settings.textPolishProfile(for: .minimal)?.prompt == TextPolishProfile.defaultProfile(for: .minimal).prompt)
+    #expect(
+        settings.textPolishProfile(for: .technical)?.prompt
+            == TextPolishProfile.defaultProfile(for: .technical).prompt
+    )
     #expect(settings.textPolishProfile(for: .rewrite)?.prompt == TextPolishProfile.defaultProfile(for: .rewrite).prompt)
 }
 
-@Test func textPolishProfilesIncludeMinimalBetweenCleanAndRewrite() {
-    #expect(TextPolishProfileID.allCases == [.clean, .minimal, .rewrite, .custom])
-    #expect(TextPolishProfile.defaultProfiles.map(\.id) == [.clean, .minimal, .rewrite, .custom])
+@Test func appSettingsPreservesStoredVocabulary() throws {
+    let data = """
+    {
+      "selectedLanguage": "german",
+      "dictationVocabulary": [
+        "Commit",
+        "  SwiftUI  ",
+        "",
+        "commit",
+        "Pull Request"
+      ]
+    }
+    """.data(using: .utf8)!
+
+    let settings = try JSONDecoder().decode(AppSettings.self, from: data)
+
+    #expect(settings.dictationVocabulary == ["Commit", "SwiftUI", "Pull Request"])
+}
+
+@Test func textPolishProfilesIncludeTechnicalBetweenMinimalAndRewrite() {
+    #expect(TextPolishProfileID.allCases == [.clean, .minimal, .technical, .rewrite, .custom])
+    #expect(TextPolishProfile.defaultProfiles.map(\.id) == [.clean, .minimal, .technical, .rewrite, .custom])
     #expect(TextPolishProfile.defaultProfile(for: .minimal).name == "Minimal")
     #expect(TextPolishProfile.defaultProfile(for: .minimal).backend == .appleIntelligence)
     #expect(TextPolishProfile.defaultProfile(for: .minimal).prompt.contains("Formuliere nicht frei um."))
+    #expect(TextPolishProfile.defaultProfile(for: .technical).name == "Technical")
+    #expect(TextPolishProfile.defaultProfile(for: .technical).backend == .appleIntelligence)
+    #expect(TextPolishProfile.defaultProfile(for: .technical).prompt.contains("Commit"))
 }
 
 @Test func deterministicTextPolisherRemovesFillersAndAddsPunctuation() {
@@ -157,6 +184,27 @@ import Testing
     )
 
     #expect(result == "AI minimal result")
+    #expect(deterministicSpy.callCount == 0)
+    #expect(appleSpy.callCount == 1)
+    #expect(appleSpy.lastProfile?.id == profile.id)
+}
+
+@Test func textPolishCoordinatorRoutesTechnicalThroughAppleIntelligence() async throws {
+    let deterministicSpy = DeterministicTextPolisherSpy(result: "Clean result.")
+    let appleSpy = AppleIntelligenceTextPolisherSpy(result: "AI technical result", status: .available)
+    let coordinator = TextPolishCoordinator(
+        deterministicPolisher: deterministicSpy,
+        appleIntelligencePolisher: appleSpy
+    )
+    let profile = TextPolishProfile.defaultProfile(for: .technical)
+
+    let result = try await coordinator.polish(
+        "raw",
+        language: .german,
+        profile: profile
+    )
+
+    #expect(result == "AI technical result")
     #expect(deterministicSpy.callCount == 0)
     #expect(appleSpy.callCount == 1)
     #expect(appleSpy.lastProfile?.id == profile.id)

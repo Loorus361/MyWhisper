@@ -17,7 +17,7 @@
 | Bundle ID | `com.carlosanderssohn.MyWhisper` |
 | Architecture | MVVM + Clean Services |
 | Third-party deps | None — pure Apple frameworks |
-| Tests | 15 tests in `Tests/MyWhisperTests/` |
+| Tests | Swift Testing tests in `Tests/MyWhisperTests/` |
 
 ---
 
@@ -57,7 +57,7 @@ MyWhisper/
 | File | Lines | Role |
 |------|-------|------|
 | `Sources/MyWhisper/Services/DictationService.swift` | 667 | Audio capture pipeline. Creates fresh `AVAudioEngine` + `SpeechAnalyzer` + `SpeechTranscriber` per session. Emits audio level, live transcript, language model status. |
-| `Sources/MyWhisper/Services/TextPolishCoordinator.swift` | 56 | Routes text through deterministic (`Clean`) or Apple Intelligence (`Rewrite`/`Custom`) backend. Handles availability checks and fallback. |
+| `Sources/MyWhisper/Services/TextPolishCoordinator.swift` | 56 | Routes text through deterministic (`Clean`) or Apple Intelligence (`Minimal`/`Technical`/`Rewrite`/`Custom`) backend. Handles availability checks and fallback. |
 | `Sources/MyWhisper/Services/TextPolisher.swift` | 44 | Deterministic polisher. Removes language-specific filler words (DE: äh/ähm, EN: uh/um), capitalizes, adds punctuation. |
 | `Sources/MyWhisper/Services/AppleIntelligenceTextPolisher.swift` | 94 | Apple Intelligence polisher. `SystemLanguageModel` + per-request `LanguageModelSession`. Checks device eligibility and locale support. |
 | `Sources/MyWhisper/Services/HotkeyService.swift` | 120 | Global hotkey via Carbon APIs. Default: `Control + Option + S`. Separate press/release callbacks. |
@@ -75,14 +75,14 @@ MyWhisper/
 | File | Type | Purpose |
 |------|------|---------|
 | `AppLanguage.swift` | Enum | German, English US with locale identifiers |
-| `AppSettings.swift` | Struct (Codable) | Language, profile selection, prompts. Includes migration logic. |
+| `AppSettings.swift` | Struct (Codable) | Language, profile selection, prompts, dictation vocabulary. Includes migration logic. |
 | `DictationState.swift` | Enum | idle / preparing / listening / processing / inserted / error(String) |
 | `LanguageModelStatus.swift` | Enum | idle / checking / downloading(Double?) / ready / failed(String) |
 | `AppleIntelligenceStatus.swift` | Enum | available / unavailable(5 reasons) |
 | `PermissionState.swift` | Enum + Struct | notDetermined / granted / denied + PermissionSnapshot |
 | `TextPolishProfile.swift` | Struct | id, name, backend, prompt. Defaults and merge logic. |
 | `TextPolishBackend.swift` | Enum | deterministic / appleIntelligence |
-| `TextPolishProfileID.swift` | Enum | clean / rewrite / custom |
+| `TextPolishProfileID.swift` | Enum | clean / minimal / technical / rewrite / custom |
 | `TranscriptionRecord.swift` | Struct (Codable) | id, timestamp, language, profileName, rawText, finalText |
 
 ### Views
@@ -107,8 +107,9 @@ MyWhisper/
 2. Permission check (microphone, speech, accessibility)
    └─ If missing → request → show error overlay
 
-3. DictationService.startCapture(language:)
+3. DictationService.startCapture(language:contextualStrings:)
    ├─ Fresh AVAudioEngine + SpeechAnalyzer + SpeechTranscriber created
+   ├─ Settings vocabulary passed to AnalysisContext.contextualStrings
    ├─ Audio tap (4096-frame buffer) installed on input node
    ├─ dictationState = .listening → Overlay shows
    └─ Async loop: buffers → analyzer → finalized + volatile segments → onLiveTranscript
@@ -166,7 +167,7 @@ AppModel.selectedLanguageModelStatus updated
 ## Text Polish Availability & Fallback
 
 ```
-User selects Rewrite/Custom profile
+User selects Minimal/Technical/Rewrite/Custom profile
 → TextPolishCoordinator.availability(for: profile, language:)
   → AppleIntelligenceTextPolisher.availability(for: language)
     ├─ SystemLanguageModel.availability check

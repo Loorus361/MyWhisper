@@ -11,12 +11,12 @@ Aktuelle Produktform:
 - globaler Hotkey: `Control + Option + S`
 - lokale Transkription mit Apples Speech-Stack
 - Sprachen: Deutsch und Englisch (US)
-- Text-Polish-Profile: `Clean`, `Minimal`, `Rewrite`, `Custom`
-- Apple-Intelligence-Rewrite fuer `Minimal`, `Rewrite` und `Custom`
+- Text-Polish-Profile: `Clean`, `Minimal`, `Technical`, `Rewrite`, `Custom`
+- Apple-Intelligence-Rewrite fuer `Minimal`, `Technical`, `Rewrite` und `Custom`
 - final-only Einfuegen in andere Apps via Clipboard + `Cmd+V`
 - Overlay mit Status, Live-Zustand und Pegelanzeige
 - lokale History mit `rawText` und `finalText`
-- Settings fuer Sprache, Berechtigungen und sichtbare Text-Polish-Prompts
+- Settings fuer Sprache, Berechtigungen, editierbares Diktat-Vokabular und sichtbare Text-Polish-Prompts
 
 ## Was in diesem Thread umgesetzt wurde
 
@@ -81,7 +81,7 @@ Das war noetig, weil nur `volatileResults` allein in der Praxis nicht die gewuen
 Die App hat jetzt einen expliziten Text-Polish-Pfad statt nur eines simplen Cleanup-Schritts:
 
 - `Clean` nutzt weiter lokalen deterministischen Cleanup
-- `Minimal`, `Rewrite` und `Custom` nutzen `FoundationModels`
+- `Minimal`, `Technical`, `Rewrite` und `Custom` nutzen `FoundationModels`
 - die AI-Prompts sind in den Settings sichtbar und editierbar
 - `Clean` zeigt seinen Regeltext read-only
 
@@ -91,12 +91,13 @@ Technische Struktur:
 - `DeterministicTextPolisher` implementiert `Clean`
 - `AppleIntelligenceTextPolisher` kapselt `SystemLanguageModel` und `LanguageModelSession`
 - `AppSettings` persistiert Profilauswahl und Prompt-Texte
-- `Minimal` ist fuer sehr nahe Diktat-Bereinigung gedacht; `Rewrite` darf staerker glaetten; `Custom` ist frei editierbar und hat einen professionellen Default
+- `Minimal` ist fuer sehr nahe Diktat-Bereinigung gedacht; `Technical` schuetzt Coding-/Git-/CLI-Begriffe; `Rewrite` darf staerker glaetten; `Custom` ist frei editierbar und hat einen professionellen Default
 
 Wichtige Laufzeitregel:
 
 - AI-Profile sind nicht garantiert verfuegbar
 - Apple-Intelligence-Prompts pinnen die Ausgabe explizit auf die ausgewaehlte App-Sprache, damit deutsches Diktat nicht ins Englische kippt
+- `Technical` soll technische Begriffe wie Commit, Branch, Pull Request, Dateinamen, Befehle und Code-Identifier nicht eindeutschen
 - Diktattext wird im AI-Prompt als reiner Inhalt markiert; Apple Intelligence darf darin enthaltene Aufgaben nicht ausfuehren
 - bei nicht verfuegbarem Apple-Intelligence-Zustand faellt die Auswahl auf `Clean` zurueck
 - beim eigentlichen AI-Generierungsfehler bricht der aktuelle Dictation-Durchlauf weiterhin mit Fehleranzeige ab statt still auf `Clean` zu wechseln
@@ -113,7 +114,8 @@ Wichtige Laufzeitregel:
 - finaler Text wird in andere Apps eingefuegt
 - mehrere Shortcut-Durchlaeufe hintereinander sind stabil
 - Text-Polish-Profile werden persisted und bei alten Settings migriert
-- `Minimal`, `Rewrite` und `Custom` koennen in den Settings direkt ueber ihre Prompts angepasst werden
+- `Minimal`, `Technical`, `Rewrite` und `Custom` koennen in den Settings direkt ueber ihre Prompts angepasst werden
+- das editierbare Diktat-Vokabular wird persisted und als `AnalysisContext.contextualStrings` an Apple Speech uebergeben
 
 ### Funktioniert, aber ist gestalterisch noch nicht gut
 

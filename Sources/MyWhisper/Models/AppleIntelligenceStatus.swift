@@ -28,7 +28,7 @@ enum AppleIntelligenceStatus: Equatable {
         case .unavailable(.deviceNotEligible):
             return "This Mac does not support Apple Intelligence."
         case .unavailable(.appleIntelligenceNotEnabled):
-            return "Turn on Apple Intelligence in System Settings to use Minimal, Rewrite, or Custom."
+            return "Turn on Apple Intelligence in System Settings to use Minimal, Technical, Rewrite, or Custom."
         case .unavailable(.modelNotReady):
             return "Apple Intelligence is not ready yet on this Mac."
         case .unavailable(.unsupportedLanguage(let unsupportedLanguage)):
