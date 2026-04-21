@@ -23,7 +23,7 @@ final class ClipboardPasteService {
         try postPasteShortcut()
 
         Task { @MainActor [snapshot, injectedChangeCount] in
-            try? await Task.sleep(nanoseconds: 350_000_000)
+            try? await Task.sleep(nanoseconds: AppConstants.clipboardRestoreDelay)
             let pasteboard = NSPasteboard.general
             guard pasteboard.changeCount == injectedChangeCount else { return }
             self.restore(snapshot, to: pasteboard)

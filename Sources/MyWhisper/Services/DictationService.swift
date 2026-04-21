@@ -164,7 +164,7 @@ final class DictationService: @unchecked Sendable {
         onLiveTranscript?("")
 
         inputNode.removeTap(onBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: tapFormat) { [weak self] buffer, _ in
+        inputNode.installTap(onBus: 0, bufferSize: AppConstants.audioTapBufferSize, format: tapFormat) { [weak self] buffer, _ in
             self?.handleAudioBuffer(buffer)
         }
 

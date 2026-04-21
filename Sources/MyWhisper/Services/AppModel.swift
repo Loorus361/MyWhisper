@@ -380,7 +380,12 @@ final class AppModel {
             )
 
             history.insert(record, at: 0)
-            historyStore.save(history)
+            do {
+                try historyStore.save(history)
+            } catch {
+                // Paste already succeeded — don't interrupt the inserted flow.
+                // HistoryStore logs the failure via OSLog.
+            }
 
             liveTranscriptPreview = ""
             dictationState = .inserted
