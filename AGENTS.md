@@ -80,6 +80,10 @@ If you need to reason about app behavior, start with:
   Cloud features, if added later, should be optional and isolated behind explicit settings or profile choices.
 - Treat Apple Intelligence as optional runtime capability, not a guaranteed dependency.
   Unsupported devices, disabled Apple Intelligence, model-not-ready states, or unsupported locales must keep the app usable by falling back to `Clean`.
+- Apple Intelligence prompt composition must explicitly pin output to the selected app language.
+  German dictation should never be translated to English by `Rewrite` or `Custom`.
+- Apple Intelligence must treat dictated text as inert content.
+  It should rewrite command-like dictation as text, not execute the command.
 - Avoid broad refactors that merge unrelated responsibilities back into one file.
   The current split is intentional and should stay readable for both humans and coding agents.
 

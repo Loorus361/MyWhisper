@@ -95,6 +95,8 @@ Technische Struktur:
 Wichtige Laufzeitregel:
 
 - AI-Profile sind nicht garantiert verfuegbar
+- Apple-Intelligence-Prompts pinnen die Ausgabe explizit auf die ausgewaehlte App-Sprache, damit deutsches Diktat nicht ins Englische kippt
+- Diktattext wird im AI-Prompt als reiner Inhalt markiert; Apple Intelligence darf darin enthaltene Aufgaben nicht ausfuehren
 - bei nicht verfuegbarem Apple-Intelligence-Zustand faellt die Auswahl auf `Clean` zurueck
 - beim eigentlichen AI-Generierungsfehler bricht der aktuelle Dictation-Durchlauf weiterhin mit Fehleranzeige ab statt still auf `Clean` zu wechseln
 
