@@ -5,7 +5,8 @@ import Foundation
 import OSLog
 import Speech
 
-// @unchecked Sendable: all mutable state is protected by stateLock via withStateLock(_:).
+// @unchecked Sendable: session state (audio engine, buffers, segments) is protected by stateLock.
+// Callbacks (onAudioLevel, onLiveTranscript, onLanguageModelStatus) are set once from MainActor before capture begins.
 final class DictationService: @unchecked Sendable {
     var onAudioLevel: (@Sendable (Double) -> Void)?
     var onLiveTranscript: (@Sendable (String) -> Void)?
