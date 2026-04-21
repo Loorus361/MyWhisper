@@ -1,4 +1,5 @@
 // Collects app-wide constants for identifiers, timings, and default dictation vocabulary.
+import AVFoundation
 import Foundation
 
 enum AppConstants {
@@ -8,6 +9,8 @@ enum AppConstants {
     static let insertedOverlayDuration: TimeInterval = 1.0
     static let errorOverlayDuration: TimeInterval = 2.0
     static let sessionGap: TimeInterval = 5 * 60
+    static let clipboardRestoreDelay: UInt64 = 350_000_000
+    static let audioTapBufferSize: AVAudioFrameCount = 4096
     static let defaultContextualStrings = [
         "Xcode",
         "SwiftUI",

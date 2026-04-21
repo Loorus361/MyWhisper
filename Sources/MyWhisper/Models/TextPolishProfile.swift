@@ -45,7 +45,10 @@ struct TextPolishProfile: Codable, Equatable, Identifiable {
     ]
 
     static func defaultProfile(for id: TextPolishProfileID) -> TextPolishProfile {
-        defaultProfiles.first(where: { $0.id == id })!
+        guard let profile = defaultProfiles.first(where: { $0.id == id }) else {
+            preconditionFailure("No default profile defined for TextPolishProfileID.\(id)")
+        }
+        return profile
     }
 
     static func merged(with storedProfiles: [TextPolishProfile]) -> [TextPolishProfile] {

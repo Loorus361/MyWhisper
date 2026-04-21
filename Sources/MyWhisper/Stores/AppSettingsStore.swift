@@ -1,5 +1,8 @@
 // Loads and saves the persisted app settings JSON file.
 import Foundation
+import OSLog
+
+private let logger = Logger(subsystem: AppConstants.bundleIdentifier, category: "AppSettingsStore")
 
 final class AppSettingsStore {
     func load() -> AppSettings {
@@ -14,6 +17,9 @@ final class AppSettingsStore {
 
             return settings
         } catch {
+            if (error as NSError).code != NSFileReadNoSuchFileError {
+                logger.error("Failed to load settings: \(error)")
+            }
             return AppSettings()
         }
     }
@@ -23,7 +29,7 @@ final class AppSettingsStore {
             let data = try JSONEncoder().encode(settings)
             try data.write(to: PersistencePaths.settingsURL, options: .atomic)
         } catch {
-            return
+            logger.error("Failed to save settings: \(error)")
         }
     }
 }

@@ -4,7 +4,9 @@ import Foundation
 enum PersistencePaths {
     static var applicationSupportDirectory: URL {
         let fileManager = FileManager.default
-        let baseURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        guard let baseURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            preconditionFailure("Application Support directory unavailable — cannot run on this system")
+        }
         let directoryURL = baseURL.appendingPathComponent(AppConstants.bundleIdentifier, isDirectory: true)
 
         if !fileManager.fileExists(atPath: directoryURL.path) {
