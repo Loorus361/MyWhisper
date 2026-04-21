@@ -3,6 +3,7 @@ import Foundation
 
 enum TextPolishProfileID: String, Codable, CaseIterable, Identifiable {
     case clean
+    case minimal
     case rewrite
     case custom
 

@@ -89,7 +89,7 @@ struct SettingsView: View {
                     }
                 }
 
-                Text("Rewrite and Custom use Apple Intelligence fully on-device and wait for the rewritten result before pasting.")
+                Text("Minimal, Rewrite, and Custom use Apple Intelligence fully on-device and wait for the rewritten result before pasting.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

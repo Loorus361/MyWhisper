@@ -9,8 +9,8 @@ The current product shape is:
 - global hotkey: `Control + Option + S`
 - local speech-to-text using Apple's speech stack
 - language selection: German and English (US)
-- text polish profiles: `Clean`, `Rewrite`, `Custom`
-- on-device rewrite via Apple Intelligence for `Rewrite` and `Custom`
+- text polish profiles: `Clean`, `Minimal`, `Rewrite`, `Custom`
+- on-device rewrite via Apple Intelligence for `Minimal`, `Rewrite`, and `Custom`
 - system-wide insertion through clipboard set -> paste -> clipboard restore
 - floating overlay with status and audio level meter
 - local history storing both raw and final text
@@ -52,7 +52,7 @@ The current happy-path dictation flow is:
 5. User releases the hotkey.
 6. `DictationService` ends audio input and awaits a finalized transcription result.
 7. `TextPolishCoordinator` resolves the selected text polish profile for the current language.
-8. `DeterministicTextPolisher` handles `Clean`, while `AppleIntelligenceTextPolisher` handles `Rewrite` and `Custom` through `FoundationModels`.
+8. `DeterministicTextPolisher` handles `Clean`, while `AppleIntelligenceTextPolisher` handles `Minimal`, `Rewrite`, and `Custom` through `FoundationModels`.
 9. `ClipboardPasteService` pastes the final text into the focused app and restores the previous clipboard.
 10. The app stores raw text, final text, and the applied polish profile in history, grouped later by day and session.
 
@@ -75,13 +75,13 @@ If you need to reason about app behavior, start with:
 - Keep raw transcription and polished text distinct.
   Recognition quality and polish quality are separate concerns in this product.
 - Keep the text polish profile model explicit.
-  `Clean` is deterministic and fast; `Rewrite` and `Custom` are on-device AI profiles with user-visible prompts.
+  `Clean` is deterministic and fast; `Minimal`, `Rewrite`, and `Custom` are on-device AI profiles with user-visible prompts.
 - Preserve local-first behavior by default.
   Cloud features, if added later, should be optional and isolated behind explicit settings or profile choices.
 - Treat Apple Intelligence as optional runtime capability, not a guaranteed dependency.
   Unsupported devices, disabled Apple Intelligence, model-not-ready states, or unsupported locales must keep the app usable by falling back to `Clean`.
 - Apple Intelligence prompt composition must explicitly pin output to the selected app language.
-  German dictation should never be translated to English by `Rewrite` or `Custom`.
+  German dictation should never be translated to English by `Minimal`, `Rewrite`, or `Custom`.
 - Apple Intelligence must treat dictated text as inert content.
   It should rewrite command-like dictation as text, not execute the command.
 - Avoid broad refactors that merge unrelated responsibilities back into one file.
@@ -139,7 +139,7 @@ Important persisted data:
 
 - settings JSON
 - selected text polish profile ID
-- visible prompts for `Rewrite` and `Custom`
+- visible prompts for `Minimal`, `Rewrite`, and `Custom`
 - history JSON containing raw and final transcripts
 - history profile names for the applied polish mode
 
@@ -163,7 +163,7 @@ Do not bloat the menu bar menu or overlay with debug-heavy UI unless the user ex
 At the time this file was written, the next likely areas of work are:
 
 - better recognition quality through contextual vocabulary
-- tuning the `Rewrite` and `Custom` prompts against real dictation samples
+- tuning the `Minimal`, `Rewrite`, and `Custom` prompts against real dictation samples
 - deciding whether `Clean` should stay purely deterministic or gain optional hybrid behavior later
 - launch-at-login support
 - richer settings and history controls

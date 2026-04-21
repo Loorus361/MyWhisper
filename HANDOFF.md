@@ -11,8 +11,8 @@ Aktuelle Produktform:
 - globaler Hotkey: `Control + Option + S`
 - lokale Transkription mit Apples Speech-Stack
 - Sprachen: Deutsch und Englisch (US)
-- Text-Polish-Profile: `Clean`, `Rewrite`, `Custom`
-- Apple-Intelligence-Rewrite fuer `Rewrite` und `Custom`
+- Text-Polish-Profile: `Clean`, `Minimal`, `Rewrite`, `Custom`
+- Apple-Intelligence-Rewrite fuer `Minimal`, `Rewrite` und `Custom`
 - final-only Einfuegen in andere Apps via Clipboard + `Cmd+V`
 - Overlay mit Status, Live-Zustand und Pegelanzeige
 - lokale History mit `rawText` und `finalText`
@@ -81,7 +81,7 @@ Das war noetig, weil nur `volatileResults` allein in der Praxis nicht die gewuen
 Die App hat jetzt einen expliziten Text-Polish-Pfad statt nur eines simplen Cleanup-Schritts:
 
 - `Clean` nutzt weiter lokalen deterministischen Cleanup
-- `Rewrite` und `Custom` nutzen `FoundationModels`
+- `Minimal`, `Rewrite` und `Custom` nutzen `FoundationModels`
 - die AI-Prompts sind in den Settings sichtbar und editierbar
 - `Clean` zeigt seinen Regeltext read-only
 
@@ -91,6 +91,7 @@ Technische Struktur:
 - `DeterministicTextPolisher` implementiert `Clean`
 - `AppleIntelligenceTextPolisher` kapselt `SystemLanguageModel` und `LanguageModelSession`
 - `AppSettings` persistiert Profilauswahl und Prompt-Texte
+- `Minimal` ist fuer sehr nahe Diktat-Bereinigung gedacht; `Rewrite` darf staerker glaetten; `Custom` ist frei editierbar und hat einen professionellen Default
 
 Wichtige Laufzeitregel:
 
@@ -112,7 +113,7 @@ Wichtige Laufzeitregel:
 - finaler Text wird in andere Apps eingefuegt
 - mehrere Shortcut-Durchlaeufe hintereinander sind stabil
 - Text-Polish-Profile werden persisted und bei alten Settings migriert
-- `Rewrite` und `Custom` koennen in den Settings direkt ueber ihre Prompts angepasst werden
+- `Minimal`, `Rewrite` und `Custom` koennen in den Settings direkt ueber ihre Prompts angepasst werden
 
 ### Funktioniert, aber ist gestalterisch noch nicht gut
 

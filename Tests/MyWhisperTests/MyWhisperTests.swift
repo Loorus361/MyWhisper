@@ -80,9 +80,18 @@ import Testing
     let settings = try JSONDecoder().decode(AppSettings.self, from: data)
 
     #expect(settings.selectedTextPolishProfileID == .custom)
-    #expect(settings.textPolishProfiles.count == 3)
+    #expect(settings.textPolishProfiles.count == 4)
     #expect(settings.selectedTextPolishProfile.prompt == "Make the text extra concise.")
+    #expect(settings.textPolishProfile(for: .minimal)?.prompt == TextPolishProfile.defaultProfile(for: .minimal).prompt)
     #expect(settings.textPolishProfile(for: .rewrite)?.prompt == TextPolishProfile.defaultProfile(for: .rewrite).prompt)
+}
+
+@Test func textPolishProfilesIncludeMinimalBetweenCleanAndRewrite() {
+    #expect(TextPolishProfileID.allCases == [.clean, .minimal, .rewrite, .custom])
+    #expect(TextPolishProfile.defaultProfiles.map(\.id) == [.clean, .minimal, .rewrite, .custom])
+    #expect(TextPolishProfile.defaultProfile(for: .minimal).name == "Minimal")
+    #expect(TextPolishProfile.defaultProfile(for: .minimal).backend == .appleIntelligence)
+    #expect(TextPolishProfile.defaultProfile(for: .minimal).prompt.contains("Formuliere nicht frei um."))
 }
 
 @Test func deterministicTextPolisherRemovesFillersAndAddsPunctuation() {
@@ -127,6 +136,27 @@ import Testing
     )
 
     #expect(result == "AI result")
+    #expect(deterministicSpy.callCount == 0)
+    #expect(appleSpy.callCount == 1)
+    #expect(appleSpy.lastProfile?.id == profile.id)
+}
+
+@Test func textPolishCoordinatorRoutesMinimalThroughAppleIntelligence() async throws {
+    let deterministicSpy = DeterministicTextPolisherSpy(result: "Clean result.")
+    let appleSpy = AppleIntelligenceTextPolisherSpy(result: "AI minimal result", status: .available)
+    let coordinator = TextPolishCoordinator(
+        deterministicPolisher: deterministicSpy,
+        appleIntelligencePolisher: appleSpy
+    )
+    let profile = TextPolishProfile.defaultProfile(for: .minimal)
+
+    let result = try await coordinator.polish(
+        "raw",
+        language: .german,
+        profile: profile
+    )
+
+    #expect(result == "AI minimal result")
     #expect(deterministicSpy.callCount == 0)
     #expect(appleSpy.callCount == 1)
     #expect(appleSpy.lastProfile?.id == profile.id)
