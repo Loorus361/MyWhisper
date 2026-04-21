@@ -187,6 +187,11 @@ struct SettingsView: View {
     }
 }
 
+#Preview("Settings") {
+    SettingsView(model: .preview())
+        .frame(width: 720, height: 760)
+}
+
 private struct PermissionRow: View {
     let title: String
     let state: PermissionState

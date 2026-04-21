@@ -97,6 +97,61 @@ final class AppModel {
         schedulePreparationIfPossible(for: settings.selectedLanguage)
     }
 
+#if DEBUG
+    static func preview(
+        settings: AppSettings = .preview,
+        history: [TranscriptionRecord] = TranscriptionRecord.previewRecords,
+        permissionSnapshot: PermissionSnapshot = .previewGranted,
+        dictationState: DictationState = .idle,
+        audioLevel: Double = 0.55,
+        liveTranscriptPreview: String = "Wir testen gerade die neue Canvas Preview für MyWhisper.",
+        selectedLanguageModelStatus: LanguageModelStatus = .ready,
+        lastErrorMessage: String? = nil,
+        textPolishSelectionMessage: String? = nil
+    ) -> AppModel {
+        AppModel(
+            previewSettings: settings,
+            history: history,
+            permissionSnapshot: permissionSnapshot,
+            dictationState: dictationState,
+            audioLevel: audioLevel,
+            liveTranscriptPreview: liveTranscriptPreview,
+            selectedLanguageModelStatus: selectedLanguageModelStatus,
+            lastErrorMessage: lastErrorMessage,
+            textPolishSelectionMessage: textPolishSelectionMessage
+        )
+    }
+
+    private init(
+        previewSettings settings: AppSettings,
+        history: [TranscriptionRecord],
+        permissionSnapshot: PermissionSnapshot,
+        dictationState: DictationState,
+        audioLevel: Double,
+        liveTranscriptPreview: String,
+        selectedLanguageModelStatus: LanguageModelStatus,
+        lastErrorMessage: String?,
+        textPolishSelectionMessage: String?
+    ) {
+        self.settings = settings
+        self.history = history
+        self.permissionSnapshot = permissionSnapshot
+        self.dictationState = dictationState
+        self.audioLevel = audioLevel
+        self.liveTranscriptPreview = liveTranscriptPreview
+        self.selectedLanguageModelStatus = selectedLanguageModelStatus
+        self.lastErrorMessage = lastErrorMessage
+        self.textPolishSelectionMessage = textPolishSelectionMessage
+        self.textPolishCoordinator = PreviewTextPolishCoordinator()
+        self.dictationService = DictationService()
+        self.hotkeyService = HotkeyService(
+            keyCode: UInt32(kVK_ANSI_S),
+            modifiers: UInt32(controlKey | optionKey)
+        )
+        self.overlayController = OverlayWindowController()
+    }
+#endif
+
     var lastRecord: TranscriptionRecord? {
         history.first
     }
@@ -587,3 +642,57 @@ final class AppModel {
         }
     }
 }
+
+#if DEBUG
+private struct PreviewTextPolishCoordinator: TextPolishCoordinating, Sendable {
+    func appleIntelligenceStatus(for language: AppLanguage) -> AppleIntelligenceStatus {
+        .available
+    }
+
+    func availability(for profile: TextPolishProfile, language: AppLanguage) -> AppleIntelligenceStatus {
+        .available
+    }
+
+    func resolvedProfileID(in settings: AppSettings) -> TextPolishProfileID {
+        settings.selectedTextPolishProfileID
+    }
+
+    func polish(_ rawText: String, language: AppLanguage, profile: TextPolishProfile) async throws -> String {
+        rawText
+    }
+}
+
+extension AppSettings {
+    static let preview = AppSettings(
+        selectedLanguage: .german,
+        selectedTextPolishProfileID: .technical
+    )
+}
+
+extension PermissionSnapshot {
+    static let previewGranted = PermissionSnapshot(
+        microphone: .granted,
+        speech: .granted,
+        accessibility: .granted
+    )
+}
+
+extension TranscriptionRecord {
+    static let previewRecords = [
+        TranscriptionRecord(
+            timestamp: Date(timeIntervalSinceReferenceDate: 777_600_000),
+            language: .german,
+            profileName: "Technical",
+            rawText: "öffne bitte die Settings View und prüfe ob die SwiftUI Preview kompiliert",
+            finalText: "Öffne bitte die SettingsView und prüfe, ob die SwiftUI Preview kompiliert."
+        ),
+        TranscriptionRecord(
+            timestamp: Date(timeIntervalSinceReferenceDate: 777_596_400),
+            language: .englishUS,
+            profileName: "Clean",
+            rawText: "add a small canvas preview for every view in the project",
+            finalText: "Add a small Canvas preview for every view in the project."
+        )
+    ]
+}
+#endif

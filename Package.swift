@@ -9,13 +9,23 @@ let package = Package(
     platforms: [
         .macOS(.v26),
     ],
+    products: [
+        .library(
+            name: "MyWhisperCore",
+            targets: ["MyWhisperCore"]
+        ),
+    ],
     targets: [
+        .target(
+            name: "MyWhisperCore"
+        ),
         .executableTarget(
-            name: "MyWhisper"
+            name: "MyWhisper",
+            dependencies: ["MyWhisperCore"]
         ),
         .testTarget(
             name: "MyWhisperTests",
-            dependencies: ["MyWhisper"]
+            dependencies: ["MyWhisperCore"]
         ),
     ],
     swiftLanguageModes: [.v6]

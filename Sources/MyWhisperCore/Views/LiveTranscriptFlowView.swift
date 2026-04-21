@@ -56,6 +56,14 @@ struct LiveTranscriptFlowView: View {
     }
 }
 
+#Preview("Live Transcript") {
+    LiveTranscriptFlowView(
+        text: "Wir testen gerade die neue Live-Transkript Vorschau mit einem etwas längeren diktierten Satz."
+    )
+    .padding(24)
+    .frame(width: 520)
+}
+
 private struct LivePulseView: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 0.9)) { context in

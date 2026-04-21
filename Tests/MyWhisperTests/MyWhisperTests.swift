@@ -1,7 +1,7 @@
 // Holds the Swift Testing target for MyWhisper logic as the app grows.
 import Foundation
 import Testing
-@testable import MyWhisper
+@testable import MyWhisperCore
 
 @Test func combineSegmentsWithFinalizedOnlyText() {
     let combined = DictationService.combineSegments(

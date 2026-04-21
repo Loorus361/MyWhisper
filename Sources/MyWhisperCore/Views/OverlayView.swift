@@ -173,3 +173,19 @@ struct OverlayView: View {
             }
     }
 }
+
+#Preview("Overlay Listening") {
+    OverlayView(
+        model: .preview(
+            dictationState: .listening,
+            audioLevel: 0.72,
+            liveTranscriptPreview: "Wir testen gerade die neue Overlay Preview mit Live-Transkript und Pegelanzeige."
+        )
+    )
+    .padding(40)
+}
+
+#Preview("Overlay Idle") {
+    OverlayView(model: .preview())
+        .padding(40)
+}

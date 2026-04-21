@@ -53,3 +53,10 @@ struct AudioLevelMeterView: View {
         return AnyShapeStyle(.white.opacity(0.16))
     }
 }
+
+#Preview("Audio Level Meter") {
+    AudioLevelMeterView(level: 0.68)
+        .padding(24)
+        .frame(width: 280)
+        .background(.black.opacity(0.82))
+}

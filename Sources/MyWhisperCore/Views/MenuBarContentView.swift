@@ -97,3 +97,9 @@ struct MenuBarContentView: View {
         return "\(profile.name) (Unavailable)"
     }
 }
+
+#Preview("Menu Bar Content") {
+    MenuBarContentView(model: .preview())
+        .padding(18)
+        .frame(width: 300)
+}

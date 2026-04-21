@@ -76,6 +76,14 @@ struct HistoryWindowView: View {
     }
 }
 
+#Preview("History Window") {
+    HistoryWindowView(model: .preview())
+}
+
+#Preview("History Empty") {
+    HistoryWindowView(model: .preview(history: []))
+}
+
 private struct HistoryRecordRow: View {
     let record: TranscriptionRecord
     let isSelected: Bool
