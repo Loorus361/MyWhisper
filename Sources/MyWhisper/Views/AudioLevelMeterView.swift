@@ -26,14 +26,7 @@ struct AudioLevelMeterView: View {
                     .animation(.spring(response: 0.2, dampingFraction: 0.72), value: level)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white.opacity(0.09), in: Capsule(style: .continuous))
-        .overlay {
-            Capsule(style: .continuous)
-                .strokeBorder(.white.opacity(0.12), lineWidth: 0.8)
-        }
     }
 
     private func barHeight(for index: Int, isActive: Bool) -> CGFloat {

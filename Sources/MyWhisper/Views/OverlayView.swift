@@ -86,20 +86,7 @@ struct OverlayView: View {
 
     private var overlayBackground: some View {
         RoundedRectangle(cornerRadius: 28, style: .continuous)
-            .fill(.ultraThinMaterial)
-            .background {
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                .white.opacity(0.20),
-                                .white.opacity(0.06)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-            }
+            .fill(.regularMaterial)
     }
 
     private var overlayBorder: some View {

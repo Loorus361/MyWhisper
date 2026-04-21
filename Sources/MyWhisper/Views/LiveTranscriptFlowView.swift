@@ -5,36 +5,28 @@ struct LiveTranscriptFlowView: View {
     let text: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .lastTextBaseline, spacing: 10) {
-                Text(displayText)
-                    .font(.system(size: 28, weight: .medium, design: .rounded))
-                    .foregroundStyle(.primary.opacity(0.95))
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .multilineTextAlignment(.leading)
-                    .contentTransition(.opacity)
-                    .animation(.spring(response: 0.28, dampingFraction: 0.86), value: displayText)
-                    .mask {
-                        LinearGradient(
-                            stops: [
-                                .init(color: .clear, location: 0),
-                                .init(color: .black, location: 0.12),
-                                .init(color: .black, location: 1)
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    }
+        HStack(alignment: .lastTextBaseline, spacing: 10) {
+            Text(displayText)
+                .font(.system(size: 28, weight: .medium, design: .rounded))
+                .foregroundStyle(.primary.opacity(0.95))
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .multilineTextAlignment(.leading)
+                .contentTransition(.opacity)
+                .animation(.spring(response: 0.28, dampingFraction: 0.86), value: displayText)
+                .mask {
+                    LinearGradient(
+                        stops: [
+                            .init(color: .clear, location: 0),
+                            .init(color: .black, location: 0.12),
+                            .init(color: .black, location: 1)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                }
 
-                LivePulseView()
-            }
-
-            Text("Live transcription")
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .tracking(1.2)
+            LivePulseView()
         }
         .padding(.vertical, 4)
     }
@@ -72,16 +64,16 @@ private struct LivePulseView: View {
             let opacity = 0.35 + ((1 - phase) * 0.55)
 
             Circle()
-                .fill(.white.opacity(0.92))
+                .fill(Color.accentColor.opacity(0.92))
                 .frame(width: 11, height: 11)
                 .scaleEffect(scale)
                 .overlay {
                     Circle()
-                        .stroke(.white.opacity(0.28), lineWidth: 5)
+                        .stroke(Color.accentColor.opacity(0.28), lineWidth: 5)
                         .scaleEffect(scale + 0.25)
                         .opacity(opacity * 0.45)
                 }
-                .shadow(color: .white.opacity(0.35), radius: 8)
+                .shadow(color: Color.accentColor.opacity(0.35), radius: 8)
         }
         .frame(width: 18, height: 18)
         .padding(.bottom, 4)
