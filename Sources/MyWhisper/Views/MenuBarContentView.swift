@@ -24,6 +24,23 @@ struct MenuBarContentView: View {
             }
         }
 
+        Menu("Text Polish") {
+            ForEach(model.textPolishProfiles) { profile in
+                Button {
+                    model.updateTextPolishProfile(profile.id)
+                } label: {
+                    HStack {
+                        Text(profileMenuTitle(for: profile))
+                        if model.selectedTextPolishProfile.id == profile.id {
+                            Spacer()
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+                .disabled(!model.isTextPolishProfileSelectable(profile))
+            }
+        }
+
         Divider()
 
         Text(model.menuStatusText)
@@ -66,5 +83,13 @@ struct MenuBarContentView: View {
         Button("Quit MyWhisper") {
             NSApp.terminate(nil)
         }
+    }
+
+    private func profileMenuTitle(for profile: TextPolishProfile) -> String {
+        guard !model.isTextPolishProfileSelectable(profile) else {
+            return profile.name
+        }
+
+        return "\(profile.name) (Unavailable)"
     }
 }
