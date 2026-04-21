@@ -5,6 +5,7 @@ import Foundation
 import OSLog
 import Speech
 
+// @unchecked Sendable: all mutable state is protected by stateLock via withStateLock(_:).
 final class DictationService: @unchecked Sendable {
     var onAudioLevel: (@Sendable (Double) -> Void)?
     var onLiveTranscript: (@Sendable (String) -> Void)?
@@ -99,58 +100,36 @@ final class DictationService: @unchecked Sendable {
             throw DictationError.alreadyCapturing
         }
 
-        let locale = try await resolvedLocale(for: language)
-        let transcriber = Self.makeTranscriber(locale: locale)
-        let modules: [any SpeechModule] = [transcriber]
-
-        let audioEngine = AVAudioEngine()
-        let inputNode = audioEngine.inputNode
-        let inputFormat = inputNode.inputFormat(forBus: 0)
-        let tapFormat = Self.preferredTapFormat(for: inputNode, fallback: inputFormat)
-
-        guard tapFormat.channelCount > 0, tapFormat.sampleRate > 0 else {
-            throw DictationError.noInputDevice
-        }
-
-        guard
-            let analysisFormat = await SpeechAnalyzer.bestAvailableAudioFormat(
-                compatibleWith: modules,
-                considering: tapFormat
-            )
-        else {
-            throw DictationError.analyzerSetupFailed
-        }
+        let audio = try await makeAudioSetup(for: language)
+        let modules: [any SpeechModule] = [audio.transcriber]
 
         let analysisContext = AnalysisContext()
         analysisContext.contextualStrings[.general] = contextualStrings
 
         let analyzer = SpeechAnalyzer(modules: modules)
         try await analyzer.setContext(analysisContext)
-        try await analyzer.prepareToAnalyze(in: analysisFormat)
+        try await analyzer.prepareToAnalyze(in: audio.analysisFormat)
 
         let inputStream = AsyncStream<AnalyzerInput>(bufferingPolicy: .unbounded) { continuation in
-            self.withStateLock {
-                self.inputContinuation = continuation
-            }
+            self.withStateLock { self.inputContinuation = continuation }
         }
         try await analyzer.start(inputSequence: inputStream)
 
-        let resultsTask = makeResultsTask(for: transcriber)
+        let resultsTask = makeResultsTask(for: audio.transcriber)
         logger.info(
             """
             Started dictation capture for \(language.localeIdentifier, privacy: .public) \
-            with input \(inputFormat.sampleRate, privacy: .public)Hz/\(inputFormat.channelCount, privacy: .public)ch, \
-            tap \(tapFormat.sampleRate, privacy: .public)Hz/\(tapFormat.channelCount, privacy: .public)ch, \
-            analyzer \(analysisFormat.sampleRate, privacy: .public)Hz/\(analysisFormat.channelCount, privacy: .public)ch
+            tap \(audio.tapFormat.sampleRate, privacy: .public)Hz/\(audio.tapFormat.channelCount, privacy: .public)ch, \
+            analyzer \(audio.analysisFormat.sampleRate, privacy: .public)Hz/\(audio.analysisFormat.channelCount, privacy: .public)ch
             """
         )
 
         withStateLock {
-            self.audioEngine = audioEngine
+            self.audioEngine = audio.engine
             self.analyzer = analyzer
-            self.transcriber = transcriber
+            self.transcriber = audio.transcriber
             self.analysisContext = analysisContext
-            self.analysisFormat = analysisFormat
+            self.analysisFormat = audio.analysisFormat
             self.resultsTask = resultsTask
             self.submittedBufferCount = 0
             self.submittedSampleCount = 0
@@ -163,19 +142,19 @@ final class DictationService: @unchecked Sendable {
         onAudioLevel?(0)
         onLiveTranscript?("")
 
-        inputNode.removeTap(onBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: AppConstants.audioTapBufferSize, format: tapFormat) { [weak self] buffer, _ in
+        audio.inputNode.removeTap(onBus: 0)
+        audio.inputNode.installTap(onBus: 0, bufferSize: AppConstants.audioTapBufferSize, format: audio.tapFormat) { [weak self] buffer, _ in
             self?.handleAudioBuffer(buffer)
         }
 
-        audioEngine.prepare()
+        audio.engine.prepare()
 
         do {
-            try audioEngine.start()
+            try audio.engine.start()
         } catch {
-            audioEngine.stop()
-            audioEngine.inputNode.removeTap(onBus: 0)
-            audioEngine.reset()
+            audio.engine.stop()
+            audio.engine.inputNode.removeTap(onBus: 0)
+            audio.engine.reset()
             finishInputStream()
             resultsTask.cancel()
             await analyzer.cancelAndFinishNow()
@@ -183,6 +162,44 @@ final class DictationService: @unchecked Sendable {
             logger.error("Audio engine failed to start: \(error.localizedDescription, privacy: .public)")
             throw error
         }
+    }
+
+    private struct AudioSetup {
+        let engine: AVAudioEngine
+        let inputNode: AVAudioInputNode
+        let transcriber: SpeechTranscriber
+        let tapFormat: AVAudioFormat
+        let analysisFormat: AVAudioFormat
+    }
+
+    private func makeAudioSetup(for language: AppLanguage) async throws -> AudioSetup {
+        let locale = try await resolvedLocale(for: language)
+        let transcriber = Self.makeTranscriber(locale: locale)
+        let modules: [any SpeechModule] = [transcriber]
+
+        let engine = AVAudioEngine()
+        let inputNode = engine.inputNode
+        let inputFormat = inputNode.inputFormat(forBus: 0)
+        let tapFormat = Self.preferredTapFormat(for: inputNode, fallback: inputFormat)
+
+        guard tapFormat.channelCount > 0, tapFormat.sampleRate > 0 else {
+            throw DictationError.noInputDevice
+        }
+
+        guard let analysisFormat = await SpeechAnalyzer.bestAvailableAudioFormat(
+            compatibleWith: modules,
+            considering: tapFormat
+        ) else {
+            throw DictationError.analyzerSetupFailed
+        }
+
+        return AudioSetup(
+            engine: engine,
+            inputNode: inputNode,
+            transcriber: transcriber,
+            tapFormat: tapFormat,
+            analysisFormat: analysisFormat
+        )
     }
 
     func finishCapture() async throws -> String {
