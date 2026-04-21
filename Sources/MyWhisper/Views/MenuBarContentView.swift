@@ -6,6 +6,7 @@ struct MenuBarContentView: View {
     let model: AppModel
 
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         Menu("Language") {
@@ -66,10 +67,13 @@ struct MenuBarContentView: View {
 
         Button("Open History") {
             openWindow(id: AppConstants.historyWindowID)
-            NSApp.activate(ignoringOtherApps: true)
+            AppWindowPositioner.bringForward(role: .history)
         }
 
-        SettingsLink()
+        Button("Settings") {
+            openSettings()
+            AppWindowPositioner.bringForward(role: .settings)
+        }
 
         if let lastErrorMessage = model.lastErrorMessage {
             Divider()

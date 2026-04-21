@@ -6,6 +6,7 @@ enum AppConstants {
     static let appName = "MyWhisper"
     static let bundleIdentifier = "com.carlosanderssohn.MyWhisper"
     static let historyWindowID = "history"
+    static let settingsWindowID = "settings"
     static let insertedOverlayDuration: TimeInterval = 1.0
     static let errorOverlayDuration: TimeInterval = 2.0
     static let sessionGap: TimeInterval = 5 * 60

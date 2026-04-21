@@ -22,6 +22,7 @@ struct MyWhisperApp: App {
 
         Window("History", id: AppConstants.historyWindowID) {
             HistoryWindowView(model: model)
+                .background(AppWindowPlacementView(role: .history))
         }
         .windowResizability(.contentSize)
         .defaultSize(width: 1040, height: 680)
@@ -29,6 +30,7 @@ struct MyWhisperApp: App {
         Settings {
             SettingsView(model: model)
                 .frame(minWidth: 580, minHeight: 700)
+                .background(AppWindowPlacementView(role: .settings))
         }
     }
 }
