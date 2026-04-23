@@ -11,8 +11,6 @@ final class AppModel {
     var history: [TranscriptionRecord]
     var permissionSnapshot: PermissionSnapshot
     var dictationState: DictationState = .idle
-    var audioLevel: Double = 0
-    var liveTranscriptPreview: String = ""
     var selectedLanguageModelStatus: LanguageModelStatus = .idle
     var lastErrorMessage: String?
     var textPolishSelectionMessage: String?
@@ -26,9 +24,8 @@ final class AppModel {
     private let textPolishCoordinator: any TextPolishCoordinating
     private let dictationService: DictationService
     private let hotkeyService: HotkeyService
-    private let overlayController: OverlayWindowController
 
-    private var overlayHideTask: Task<Void, Never>?
+    private var stateResetTask: Task<Void, Never>?
     private var preparedLanguageIDs = Set<String>()
     private var preparationTask: Task<Bool, Never>?
     private var preparationTaskToken: UUID?
@@ -42,23 +39,9 @@ final class AppModel {
         self.textPolishCoordinator = TextPolishCoordinator()
         self.dictationService = DictationService()
         self.hotkeyService = HotkeyService(
-            keyCode: UInt32(kVK_ANSI_S),
-            modifiers: UInt32(controlKey | optionKey)
+            keyCode: UInt16(kVK_ANSI_S),
+            modifiers: [.control, .option]
         )
-        self.overlayController = OverlayWindowController()
-
-        dictationService.onAudioLevel = { [weak self] level in
-            Task { @MainActor [weak self] in
-                self?.audioLevel = level
-            }
-        }
-
-        dictationService.onLiveTranscript = { [weak self] preview in
-            Task { @MainActor [weak self] in
-                self?.liveTranscriptPreview = preview
-            }
-        }
-
         dictationService.onLanguageModelStatus = { [weak self] status in
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -82,12 +65,10 @@ final class AppModel {
             }
         }
 
-        overlayController.bind(to: self)
-
         do {
             try hotkeyService.register()
         } catch {
-            presentError("Failed to register the global hotkey.")
+            lastErrorMessage = error.localizedDescription
         }
 
         selectedLanguageModelStatus = preparedLanguageIDs.contains(settings.selectedLanguage.localeIdentifier)
@@ -103,8 +84,6 @@ final class AppModel {
         history: [TranscriptionRecord] = TranscriptionRecord.previewRecords,
         permissionSnapshot: PermissionSnapshot = .previewGranted,
         dictationState: DictationState = .idle,
-        audioLevel: Double = 0.55,
-        liveTranscriptPreview: String = "Wir testen gerade die neue Canvas Preview für MyWhisper.",
         selectedLanguageModelStatus: LanguageModelStatus = .ready,
         lastErrorMessage: String? = nil,
         textPolishSelectionMessage: String? = nil
@@ -114,8 +93,6 @@ final class AppModel {
             history: history,
             permissionSnapshot: permissionSnapshot,
             dictationState: dictationState,
-            audioLevel: audioLevel,
-            liveTranscriptPreview: liveTranscriptPreview,
             selectedLanguageModelStatus: selectedLanguageModelStatus,
             lastErrorMessage: lastErrorMessage,
             textPolishSelectionMessage: textPolishSelectionMessage
@@ -127,8 +104,6 @@ final class AppModel {
         history: [TranscriptionRecord],
         permissionSnapshot: PermissionSnapshot,
         dictationState: DictationState,
-        audioLevel: Double,
-        liveTranscriptPreview: String,
         selectedLanguageModelStatus: LanguageModelStatus,
         lastErrorMessage: String?,
         textPolishSelectionMessage: String?
@@ -137,18 +112,15 @@ final class AppModel {
         self.history = history
         self.permissionSnapshot = permissionSnapshot
         self.dictationState = dictationState
-        self.audioLevel = audioLevel
-        self.liveTranscriptPreview = liveTranscriptPreview
         self.selectedLanguageModelStatus = selectedLanguageModelStatus
         self.lastErrorMessage = lastErrorMessage
         self.textPolishSelectionMessage = textPolishSelectionMessage
         self.textPolishCoordinator = PreviewTextPolishCoordinator()
         self.dictationService = DictationService()
         self.hotkeyService = HotkeyService(
-            keyCode: UInt32(kVK_ANSI_S),
-            modifiers: UInt32(controlKey | optionKey)
+            keyCode: UInt16(kVK_ANSI_S),
+            modifiers: [.control, .option]
         )
-        self.overlayController = OverlayWindowController()
     }
 #endif
 
@@ -201,21 +173,6 @@ final class AppModel {
         settings.dictationVocabulary.joined(separator: "\n")
     }
 
-    var overlayModeLabel: String {
-        selectedTextPolishProfile.name
-    }
-
-    var overlayStatusText: String {
-        switch dictationState {
-        case .preparing:
-            return preparationStatusText
-        case .error(let message):
-            return message
-        default:
-            return dictationState.overlayTitle
-        }
-    }
-
     var menuStatusText: String {
         switch dictationState {
         case .idle:
@@ -227,8 +184,14 @@ final class AppModel {
             }
         case .preparing:
             return preparationStatusText
-        default:
-            return overlayStatusText
+        case .listening:
+            return "Listening\u{2026}"
+        case .processing:
+            return "Polishing\u{2026}"
+        case .inserted:
+            return "Inserted."
+        case .error(let message):
+            return message
         }
     }
 
@@ -242,7 +205,6 @@ final class AppModel {
         settings = updatedSettings
         textPolishSelectionMessage = nil
         settingsStore.save(settings)
-        liveTranscriptPreview = ""
         lastErrorMessage = nil
         selectedLanguageModelStatus = preparedLanguageIDs.contains(language.localeIdentifier) ? .ready : .idle
         reconcileTextPolishSelection(persist: true)
@@ -385,26 +347,21 @@ final class AppModel {
     private func handleHotkeyPressed() async {
         guard dictationState == .idle else { return }
         isHotkeyHeld = true
-        overlayHideTask?.cancel()
-        audioLevel = 0
-        liveTranscriptPreview = ""
+        stateResetTask?.cancel()
         lastErrorMessage = nil
 
         if !preparedLanguageIDs.contains(settings.selectedLanguage.localeIdentifier) {
             dictationState = .preparing
-            overlayController.show()
             await Task.yield()
         }
 
         guard await ensureReadyForDictation() else { return }
         guard isHotkeyHeld else {
             dictationState = .idle
-            overlayController.hide()
             return
         }
 
         dictationState = .preparing
-        overlayController.show()
 
         do {
             try await dictationService.startCapture(
@@ -415,7 +372,6 @@ final class AppModel {
             guard isHotkeyHeld else {
                 await dictationService.cancelCapture()
                 dictationState = .idle
-                overlayController.hide()
                 return
             }
 
@@ -435,7 +391,6 @@ final class AppModel {
         guard dictationState == .listening else { return }
 
         dictationState = .processing
-        audioLevel = 0
 
         do {
             let rawText = try await dictationService.finishCapture()
@@ -463,10 +418,8 @@ final class AppModel {
                 // HistoryStore logs the failure via OSLog.
             }
 
-            liveTranscriptPreview = ""
             dictationState = .inserted
-            overlayController.show()
-            scheduleOverlayHide(after: AppConstants.insertedOverlayDuration)
+            scheduleStateReset(after: 1.0)
         } catch {
             presentError(error.localizedDescription)
         }
@@ -621,24 +574,18 @@ final class AppModel {
     }
 
     private func presentError(_ message: String) {
-        audioLevel = 0
-        liveTranscriptPreview = ""
         lastErrorMessage = message
         dictationState = .error(message)
-        overlayController.show()
-        scheduleOverlayHide(after: AppConstants.errorOverlayDuration)
+        scheduleStateReset(after: 2.0)
     }
 
-    private func scheduleOverlayHide(after duration: TimeInterval) {
-        overlayHideTask?.cancel()
-        overlayHideTask = Task { @MainActor [weak self] in
+    private func scheduleStateReset(after duration: TimeInterval) {
+        stateResetTask?.cancel()
+        stateResetTask = Task { @MainActor [weak self] in
             let delay = UInt64(duration * 1_000_000_000)
             try? await Task.sleep(nanoseconds: delay)
             guard let self, !Task.isCancelled else { return }
             self.dictationState = .idle
-            self.audioLevel = 0
-            self.liveTranscriptPreview = ""
-            self.overlayController.hide()
         }
     }
 }

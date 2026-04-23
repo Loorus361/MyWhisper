@@ -1,7 +1,7 @@
 # MyWhisper — Codebase Analysis
 
 > Machine-readable reference for AI agents. Companion to AGENTS.md (developer rules) and HANDOFF.md (project status).  
-> Last updated: 2026-04-21
+> Last updated: 2026-04-23
 
 ---
 
@@ -31,15 +31,16 @@ MyWhisper/
 ├── CODEBASE.md                          This file — AI agent reference
 ├── script/
 │   └── build_and_run.sh                 Build, sign, launch script
-├── Sources/MyWhisper/
-│   ├── App/
-│   │   ├── AppDelegate.swift            NSApp launch configuration
-│   │   └── MyWhisperApp.swift           SwiftUI entry point, MenuBarExtra
-│   ├── Models/                          11 value types (enums, structs)
-│   ├── Services/                        7 platform integrations
+├── Sources/MyWhisper/                   Thin app-entry-point target
+│   └── App/
+│       ├── AppDelegate.swift            NSApp launch configuration
+│       └── MyWhisperApp.swift           SwiftUI entry point, MenuBarExtra
+├── Sources/MyWhisperCore/               Library target (shared by app and previews)
+│   ├── Models/                          10 value types (enums, structs)
+│   ├── Services/                        9 classes (AppModel + 8 service classes)
 │   ├── Stores/                          2 JSON persistence files
-│   ├── Support/                         3 utility files
-│   └── Views/                           8 SwiftUI view components
+│   ├── Support/                         4 utility files
+│   └── Views/                           3 SwiftUI view components
 └── Tests/MyWhisperTests/
     └── MyWhisperTests.swift             15 unit tests
 ```
@@ -51,25 +52,24 @@ MyWhisper/
 ### Coordinator
 | File | Lines | Role |
 |------|-------|------|
-| `Sources/MyWhisper/App/AppModel.swift` | 563 | Central `@Observable @MainActor` coordinator. Manages hotkey, permissions, dictation lifecycle, text polish routing, history, UI state. |
+| `Sources/MyWhisperCore/Services/AppModel.swift` | ~490 | Central `@Observable @MainActor` coordinator. Manages hotkey, permissions, dictation lifecycle, text polish routing, history, UI state. |
 
 ### Services
 | File | Lines | Role |
 |------|-------|------|
-| `Sources/MyWhisper/Services/DictationService.swift` | 667 | Audio capture pipeline. Creates fresh `AVAudioEngine` + `SpeechAnalyzer` + `SpeechTranscriber` per session. Emits audio level, live transcript, language model status. |
-| `Sources/MyWhisper/Services/TextPolishCoordinator.swift` | 56 | Routes text through deterministic (`Clean`) or Apple Intelligence (`Minimal`/`Technical`/`Rewrite`/`Custom`) backend. Handles availability checks and fallback. |
-| `Sources/MyWhisper/Services/TextPolisher.swift` | 44 | Deterministic polisher. Removes language-specific filler words (DE: äh/ähm, EN: uh/um), capitalizes, adds punctuation. |
-| `Sources/MyWhisper/Services/AppleIntelligenceTextPolisher.swift` | 94 | Apple Intelligence polisher. `SystemLanguageModel` + per-request `LanguageModelSession`. Checks device eligibility and locale support. |
-| `Sources/MyWhisper/Services/HotkeyService.swift` | 120 | Global hotkey via Carbon APIs. Default: `Control + Option + S`. Separate press/release callbacks. |
-| `Sources/MyWhisper/Services/ClipboardPasteService.swift` | 107 | Snapshots clipboard → sets text → posts `Cmd+V` via `CGEvent` → restores clipboard after 350ms. |
-| `Sources/MyWhisper/Services/PermissionService.swift` | 80 | TCC permission management: microphone, speech recognition, accessibility. Async request methods. |
-| `Sources/MyWhisper/Services/OverlayWindowController.swift` | 50 | Borderless `NSPanel` (460×188, always-on-top, non-activating). Hosts `OverlayView`. |
+| `Sources/MyWhisperCore/Services/DictationService.swift` | 667 | Audio capture pipeline. Creates fresh `AVAudioEngine` + `SpeechAnalyzer` + `SpeechTranscriber` per session. Emits audio level, live transcript, language model status. |
+| `Sources/MyWhisperCore/Services/TextPolishCoordinator.swift` | 56 | Routes text through deterministic (`Clean`) or Apple Intelligence (`Minimal`/`Technical`/`Rewrite`/`Custom`) backend. Handles availability checks and fallback. |
+| `Sources/MyWhisperCore/Services/TextPolisher.swift` | 44 | Deterministic polisher. Removes language-specific filler words (DE: äh/ähm, EN: uh/um), capitalizes, adds punctuation. |
+| `Sources/MyWhisperCore/Services/AppleIntelligenceTextPolisher.swift` | 94 | Apple Intelligence polisher. `SystemLanguageModel` + per-request `LanguageModelSession`. Checks device eligibility and locale support. |
+| `Sources/MyWhisperCore/Services/HotkeyService.swift` | 73 | Global hotkey via `NSEvent.addGlobalMonitorForEvents`. Default: `Control + Option + S`. `@MainActor`, key-repeat-safe, `isKeyDown` guard prevents stray releases. |
+| `Sources/MyWhisperCore/Services/ClipboardPasteService.swift` | 107 | Snapshots clipboard → sets text → posts `Cmd+V` via `CGEvent` → restores clipboard after 350ms. |
+| `Sources/MyWhisperCore/Services/PermissionService.swift` | 80 | TCC permission management: microphone, speech recognition, accessibility. Async request methods. |
 
 ### Stores
 | File | Role |
 |------|------|
-| `Sources/MyWhisper/Stores/AppSettingsStore.swift` | JSON at `~/Library/Application Support/com.carlosanderssohn.MyWhisper/settings.json` |
-| `Sources/MyWhisper/Stores/HistoryStore.swift` | JSON at `~/Library/Application Support/com.carlosanderssohn.MyWhisper/history.json` |
+| `Sources/MyWhisperCore/Stores/AppSettingsStore.swift` | JSON at `~/Library/Application Support/com.carlosanderssohn.MyWhisper/settings.json` |
+| `Sources/MyWhisperCore/Stores/HistoryStore.swift` | JSON at `~/Library/Application Support/com.carlosanderssohn.MyWhisper/history.json` |
 
 ### Models
 | File | Type | Purpose |
@@ -88,13 +88,10 @@ MyWhisper/
 ### Views
 | File | Role |
 |------|------|
-| `MyWhisperApp.swift` | App entry, `MenuBarExtra` with language badge, history window (1040×680), settings sheet |
-| `MenuBarContentView.swift` | Popup: language picker, status text, last inserted text, links |
-| `OverlayView.swift` | Floating 460×188 overlay: state-driven display (live meter + transcript, or status text) |
-| `LiveTranscriptFlowView.swift` | Trailing 94-char excerpt with fade mask and pulse animation |
-| `AudioLevelMeterView.swift` | 12-bar spectrum meter with spring animations and color gradient |
-| `SettingsView.swift` | Language, profile, Apple Intelligence status, permission rows, model retry |
-| `HistoryWindowView.swift` | `NavigationSplitView`: day-grouped sidebar + raw/final text detail |
+| `Sources/MyWhisper/App/MyWhisperApp.swift` | App entry, `MenuBarExtra` with language badge, history window (1040×680), settings sheet |
+| `Sources/MyWhisperCore/Views/MenuBarContentView.swift` | Popup: language picker, status text, last inserted text, links |
+| `Sources/MyWhisperCore/Views/SettingsView.swift` | Language, profile, Apple Intelligence status, permission rows, model retry |
+| `Sources/MyWhisperCore/Views/HistoryWindowView.swift` | `NavigationSplitView`: day-grouped sidebar + raw/final text detail |
 
 ---
 
@@ -105,14 +102,14 @@ MyWhisper/
    └─ HotkeyService.onPressed() → AppModel.handleHotkeyPressed()
 
 2. Permission check (microphone, speech, accessibility)
-   └─ If missing → request → show error overlay
+   └─ If missing → request → presentError() → scheduleStateReset()
 
 3. DictationService.startCapture(language:contextualStrings:)
    ├─ Fresh AVAudioEngine + SpeechAnalyzer + SpeechTranscriber created
    ├─ Settings vocabulary passed to AnalysisContext.contextualStrings
    ├─ Audio tap (4096-frame buffer) installed on input node
-   ├─ dictationState = .listening → Overlay shows
-   └─ Async loop: buffers → analyzer → finalized + volatile segments → onLiveTranscript
+   ├─ dictationState = .listening
+   └─ Async loop: buffers → analyzer → finalized + volatile segments
 
 4. User releases Control+Option+S
    └─ HotkeyService.onReleased() → AppModel.handleHotkeyReleased()
@@ -138,7 +135,7 @@ MyWhisper/
 8. TranscriptionRecord(id, timestamp, language, profileName, rawText, finalText)
    └─ history.insert(record, at: 0) → HistoryStore.save() → history.json
 
-9. dictationState = .inserted (1.0s) → .idle → Overlay hides
+9. dictationState = .inserted → scheduleStateReset(after: 1.0s) → .idle
 ```
 
 ---
@@ -188,9 +185,8 @@ If available:
 
 | Framework | Used For |
 |-----------|---------|
-| AppKit | NSApplication, NSPanel, NSPasteboard, NSScreen |
+| AppKit | NSApplication, NSPasteboard, NSScreen, NSEvent (global key monitors) |
 | SwiftUI | Views, @Observable, MenuBarExtra |
-| Carbon.HIToolbox | Global hotkey registration (EventHotKeyID, kVK_ANSI_S) |
 | CoreGraphics | CGEvent for keyboard simulation (Cmd+V) |
 | AVFoundation | AVAudioEngine, AVAudioInputNode, AVAudioPCMBuffer |
 | Speech | SFSpeechRecognizer (permission check only) |

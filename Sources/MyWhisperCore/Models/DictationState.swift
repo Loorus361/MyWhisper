@@ -1,4 +1,4 @@
-// Enumerates the high-level runtime states shown in the menu bar and overlay UI.
+// Enumerates the high-level runtime states shown in the menu bar.
 import Foundation
 
 enum DictationState: Equatable {
@@ -26,20 +26,5 @@ enum DictationState: Equatable {
         }
     }
 
-    var overlayTitle: String {
-        switch self {
-        case .idle:
-            return "Ready"
-        case .preparing:
-            return "Preparing"
-        case .listening:
-            return "Listening"
-        case .processing:
-            return "Processing"
-        case .inserted:
-            return "Inserted"
-        case .error:
-            return "Error"
-        }
-    }
+
 }

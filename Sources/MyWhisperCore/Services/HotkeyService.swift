@@ -1,119 +1,72 @@
-// Registers and dispatches the global push-to-talk hotkey through Carbon event APIs.
-import Carbon
+// Registers and dispatches the global push-to-talk hotkey using NSEvent global monitors.
+import AppKit
 import Foundation
 
+@MainActor
 final class HotkeyService {
     var onPressed: (() -> Void)?
     var onReleased: (() -> Void)?
 
-    private let keyCode: UInt32
-    private let modifiers: UInt32
-    private let hotKeyID = EventHotKeyID(signature: 0x4D575350, id: 1)
+    private let keyCode: UInt16
+    private let requiredModifiers: NSEvent.ModifierFlags
 
-    private var hotKeyRef: EventHotKeyRef?
-    private var eventHandlerRef: EventHandlerRef?
+    private var downMonitor: Any?
+    private var upMonitor: Any?
+    /// Guards against key-repeat floods and stray keyUp events from other uses of the same key.
+    private var isKeyDown = false
 
-    init(keyCode: UInt32, modifiers: UInt32) {
+    init(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) {
         self.keyCode = keyCode
-        self.modifiers = modifiers
+        self.requiredModifiers = modifiers
     }
 
     func register() throws {
-        guard hotKeyRef == nil else { return }
+        guard downMonitor == nil else { return }
 
-        var eventTypes = [
-            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
-            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased)),
-        ]
+        // Capture value types so the closures don't need to cross actor boundaries.
+        let code = keyCode
+        let mods = requiredModifiers
 
-        let callback: EventHandlerUPP = { _, eventRef, userData in
-            guard
-                let eventRef,
-                let userData
-            else {
-                return noErr
+        downMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            // isARepeat: macOS fires ~30 keyDown/sec while a key is held — ignore repeats.
+            guard !event.isARepeat,
+                  event.keyCode == code,
+                  event.modifierFlags.intersection([.shift, .control, .option, .command]) == mods
+            else { return }
+            Task { @MainActor [weak self] in
+                guard let self, !self.isKeyDown else { return }
+                self.isKeyDown = true
+                self.onPressed?()
             }
-
-            let service = Unmanaged<HotkeyService>.fromOpaque(userData).takeUnretainedValue()
-            var hotKeyID = EventHotKeyID()
-
-            GetEventParameter(
-                eventRef,
-                EventParamName(kEventParamDirectObject),
-                EventParamType(typeEventHotKeyID),
-                nil,
-                MemoryLayout<EventHotKeyID>.size,
-                nil,
-                &hotKeyID
-            )
-
-            guard hotKeyID.id == service.hotKeyID.id else {
-                return noErr
-            }
-
-            switch GetEventKind(eventRef) {
-            case UInt32(kEventHotKeyPressed):
-                service.onPressed?()
-            case UInt32(kEventHotKeyReleased):
-                service.onReleased?()
-            default:
-                break
-            }
-
-            return noErr
         }
 
-        let installStatus = InstallEventHandler(
-            GetEventDispatcherTarget(),
-            callback,
-            eventTypes.count,
-            &eventTypes,
-            Unmanaged.passUnretained(self).toOpaque(),
-            &eventHandlerRef
-        )
-
-        guard installStatus == noErr else {
-            throw HotkeyError.installFailed
+        upMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyUp) { [weak self] event in
+            guard event.keyCode == code else { return }
+            Task { @MainActor [weak self] in
+                // Only fire if we actually started from a matched keyDown.
+                guard let self, self.isKeyDown else { return }
+                self.isKeyDown = false
+                self.onReleased?()
+            }
         }
 
-        let registerStatus = RegisterEventHotKey(
-            keyCode,
-            modifiers,
-            hotKeyID,
-            GetEventDispatcherTarget(),
-            0,
-            &hotKeyRef
-        )
-
-        guard registerStatus == noErr else {
+        guard downMonitor != nil, upMonitor != nil else {
             unregister()
             throw HotkeyError.registrationFailed
         }
     }
 
     func unregister() {
-        if let hotKeyRef {
-            UnregisterEventHotKey(hotKeyRef)
-            self.hotKeyRef = nil
-        }
-
-        if let eventHandlerRef {
-            RemoveEventHandler(eventHandlerRef)
-            self.eventHandlerRef = nil
-        }
+        if let m = downMonitor { NSEvent.removeMonitor(m); downMonitor = nil }
+        if let m = upMonitor { NSEvent.removeMonitor(m); upMonitor = nil }
+        isKeyDown = false
     }
 }
 
 private enum HotkeyError: LocalizedError {
-    case installFailed
     case registrationFailed
 
     var errorDescription: String? {
-        switch self {
-        case .installFailed:
-            return "The system hotkey event handler could not be installed."
-        case .registrationFailed:
-            return "The global hotkey could not be registered."
-        }
+        "The global hotkey monitor could not be installed. Grant Accessibility access in System Settings \u{203a} Privacy \u{203a} Accessibility."
     }
 }

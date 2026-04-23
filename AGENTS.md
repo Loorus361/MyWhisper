@@ -12,7 +12,6 @@ The current product shape is:
 - text polish profiles: `Clean`, `Minimal`, `Technical`, `Rewrite`, `Custom`
 - on-device rewrite via Apple Intelligence for `Minimal`, `Technical`, `Rewrite`, and `Custom`
 - system-wide insertion through clipboard set -> paste -> clipboard restore
-- floating overlay with status and audio level meter
 - local history storing both raw and final text
 - settings window for permissions, language defaults, dictation vocabulary, and text polish prompts
 
@@ -24,16 +23,16 @@ The app is intentionally macOS-first and personal-tool-first. Favor reliability,
   Defines the SwiftPM package and macOS target.
 - `Sources/MyWhisper/App`
   App entrypoint and app-level launch behavior.
-- `Sources/MyWhisper/Models`
+- `Sources/MyWhisperCore/Models`
   Small value types and enums used across UI and services.
-- `Sources/MyWhisper/Services`
-  Runtime behavior: hotkey handling, speech capture, permissions, paste flow, overlay management, and the main app model.
-- `Sources/MyWhisper/Stores`
+- `Sources/MyWhisperCore/Services`
+  Runtime behavior: hotkey handling, speech capture, permissions, paste flow, and the main app model.
+- `Sources/MyWhisperCore/Stores`
   Local persistence for settings and transcription history.
-- `Sources/MyWhisper/Support`
+- `Sources/MyWhisperCore/Support`
   Constants, grouping helpers, and filesystem path helpers.
-- `Sources/MyWhisper/Views`
-  SwiftUI views for the menu bar menu, overlay, settings, history, and small UI components.
+- `Sources/MyWhisperCore/Views`
+  SwiftUI views for the menu bar menu, settings, and history.
 - `script/build_and_run.sh`
   Canonical local build/run/sign/stage entrypoint.
 - `.codex/environments/environment.toml`
@@ -48,7 +47,7 @@ The current happy-path dictation flow is:
 1. User presses the global hotkey.
 2. `AppModel` verifies permissions and ensures the selected language has been prepared for the current app session.
 3. `DictationService` prepares a fresh `SpeechAnalyzer` + `SpeechTranscriber` session and starts audio capture.
-4. The overlay shows listening state, live audio level, and volatile live transcription inside the app.
+4. `dictationState` transitions to `.listening`; the menu bar menu reflects this state.
 5. User releases the hotkey.
 6. `DictationService` ends audio input and awaits a finalized transcription result.
 7. `TextPolishCoordinator` resolves the selected text polish profile for the current language.
@@ -58,11 +57,12 @@ The current happy-path dictation flow is:
 
 If you need to reason about app behavior, start with:
 
-- `Sources/MyWhisper/Services/AppModel.swift`
-- `Sources/MyWhisper/Services/DictationService.swift`
-- `Sources/MyWhisper/Services/ClipboardPasteService.swift`
-- `Sources/MyWhisper/Services/TextPolishCoordinator.swift`
-- `Sources/MyWhisper/Services/AppleIntelligenceTextPolisher.swift`
+- `Sources/MyWhisperCore/Services/AppModel.swift`
+- `Sources/MyWhisperCore/Services/HotkeyService.swift`
+- `Sources/MyWhisperCore/Services/DictationService.swift`
+- `Sources/MyWhisperCore/Services/ClipboardPasteService.swift`
+- `Sources/MyWhisperCore/Services/TextPolishCoordinator.swift`
+- `Sources/MyWhisperCore/Services/AppleIntelligenceTextPolisher.swift`
 
 ## Key Architectural Rules
 
@@ -158,7 +158,7 @@ The intended UI direction is:
 - one accent color
 - fast feedback over decorative motion
 
-Do not bloat the menu bar menu or overlay with debug-heavy UI unless the user explicitly asks for it.
+Do not bloat the menu bar menu with debug-heavy UI unless the user explicitly asks for it.
 
 ## Near-Term Priorities
 

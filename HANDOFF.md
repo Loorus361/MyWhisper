@@ -14,7 +14,6 @@ Aktuelle Produktform:
 - Text-Polish-Profile: `Clean`, `Minimal`, `Technical`, `Rewrite`, `Custom`
 - Apple-Intelligence-Rewrite fuer `Minimal`, `Technical`, `Rewrite` und `Custom`
 - final-only Einfuegen in andere Apps via Clipboard + `Cmd+V`
-- Overlay mit Status, Live-Zustand und Pegelanzeige
 - lokale History mit `rawText` und `finalText`
 - Settings fuer Sprache, Berechtigungen, editierbares Diktat-Vokabular und sichtbare Text-Polish-Prompts
 
@@ -41,15 +40,13 @@ Wichtige Punkte:
 
 `AppModel` verwaltet jetzt:
 
-- `liveTranscriptPreview`
 - `selectedLanguageModelStatus`
 - vorbereitete Sprach-IDs statt frueherer Warm-up-Semantik
 
 UI-Aenderungen:
 
 - Settings zeigen den Sprachmodell-Status inklusive Retry bei Fehlern.
-- Menubar-Status reflektiert Preparation/Download.
-- Overlay kann Live-Preview anzeigen.
+- Menubar-Status reflektiert alle Dictation-States (Preparation/Download/Listening/Inserted/Error).
 
 ### 3. Audio-/Capture-Stabilisierung
 
@@ -102,14 +99,40 @@ Wichtige Laufzeitregel:
 - bei nicht verfuegbarem Apple-Intelligence-Zustand faellt die Auswahl auf `Clean` zurueck
 - beim eigentlichen AI-Generierungsfehler bricht der aktuelle Dictation-Durchlauf weiterhin mit Fehleranzeige ab statt still auf `Clean` zu wechseln
 
+### 6. HotkeyService-Umbau und Overlay-Entfernung (2026-04-23)
+
+**HotkeyService komplett neu gebaut:**
+
+Der bisherige Carbon-basierte Ansatz (`RegisterEventHotKey`) war auf macOS 26 mit LSUIElement-Apps nicht zuverlaessig und schlug bei jedem App-Start fehl.
+
+Neuer Ansatz: `NSEvent.addGlobalMonitorForEvents(matching:)` mit:
+- `!event.isARepeat`-Guard, um Key-Repeat-Events (~30/s beim Halten) zu ignorieren
+- `isKeyDown`-Flag, das sicherstellt dass `onPressed` nur einmal pro echter Taste ausgeloest wird und `onReleased` nur nach einem passenden `onPressed` folgt
+- Accessibility-Permission ist ohnehin Voraussetzung und reicht als Basis fuer globale Monitore
+
+**Overlay vollstaendig entfernt:**
+
+Der Nutzer diktiert blind und benoetigt kein visuelles Feedback-Fenster. Das Overlay war Quelle von Instabilitaet (Carbon-Fehler, Key-Repeat-Flooding) und wurde bewusst entfernt.
+
+Geloeschte Dateien:
+- `Sources/MyWhisperCore/Services/OverlayWindowController.swift`
+- `Sources/MyWhisperCore/Views/OverlayView.swift`
+- `Sources/MyWhisperCore/Views/AudioLevelMeterView.swift`
+- `Sources/MyWhisperCore/Views/LiveTranscriptFlowView.swift`
+
+Bereinigungen in `AppModel`:
+- `overlayController`, `overlayHideTask` → `stateResetTask`
+- `audioLevel`, `liveTranscriptPreview` entfernt
+- `scheduleOverlayHide` → `scheduleStateReset(after:)`
+- `menuStatusText` deckt alle States inline ab
+
 ## Aktueller funktionaler Stand
 
 ### Funktioniert
 
 - App startet und baut sauber
 - Sprachmodell-Preparation funktioniert
-- Listening startet beim ersten Shortcut
-- Pegel schlaegt aus
+- Listening startet beim ersten Shortcut (kein Key-Repeat-Flooding mehr)
 - Loslassen finalisiert den Text
 - finaler Text wird in andere Apps eingefuegt
 - mehrere Shortcut-Durchlaeufe hintereinander sind stabil
@@ -119,23 +142,7 @@ Wichtige Laufzeitregel:
 
 ### Funktioniert, aber ist gestalterisch noch nicht gut
 
-- Overlay wurde modernisiert, ist aber noch nicht auf dem gewuenschten Apple-/Liquid-Glass-Niveau
-- Live-Text wirkt noch nicht wirklich "fluessig"
-- Pegelmeter wurde vom Nutzer explizit als unbefriedigend bewertet
-
-Wichtig:
-
-- Der Nutzer moechte den UI-Feinschliff vorerst nicht weiter vertiefen.
-- Funktion geht momentan vor perfekter Optik.
-
-## Nutzerfeedback aus dem aktuellen Stand
-
-Der Nutzer hat den letzten Overlay-Stand so eingeordnet:
-
-- Richtung stimmt grundsaetzlich
-- Live-Text laeuft noch nicht schoen fluessig
-- Pegelanzeige ist gestalterisch nicht akzeptabel
-- vorerst Fokus lieber auf andere Themen statt Overlay-Polish
+- Menubar-Status zeigt alle Zustaende, koennte aber noch eleganter sein
 
 ## Wichtige Dateien
 
@@ -144,17 +151,14 @@ Zentrale Dateien fuer den aktuellen Stand:
 - `Package.swift`
 - `script/build_and_run.sh`
 - `AGENTS.md`
-- `Sources/MyWhisper/Services/AppModel.swift`
-- `Sources/MyWhisper/Services/TextPolishCoordinator.swift`
-- `Sources/MyWhisper/Services/AppleIntelligenceTextPolisher.swift`
-- `Sources/MyWhisper/Models/TextPolishProfile.swift`
-- `Sources/MyWhisper/Services/DictationService.swift`
-- `Sources/MyWhisper/Services/OverlayWindowController.swift`
-- `Sources/MyWhisper/Views/OverlayView.swift`
-- `Sources/MyWhisper/Views/AudioLevelMeterView.swift`
-- `Sources/MyWhisper/Views/LiveTranscriptFlowView.swift`
-- `Sources/MyWhisper/Views/SettingsView.swift`
-- `Sources/MyWhisper/Models/LanguageModelStatus.swift`
+- `Sources/MyWhisperCore/Services/AppModel.swift`
+- `Sources/MyWhisperCore/Services/HotkeyService.swift`
+- `Sources/MyWhisperCore/Services/DictationService.swift`
+- `Sources/MyWhisperCore/Services/TextPolishCoordinator.swift`
+- `Sources/MyWhisperCore/Services/AppleIntelligenceTextPolisher.swift`
+- `Sources/MyWhisperCore/Models/TextPolishProfile.swift`
+- `Sources/MyWhisperCore/Models/LanguageModelStatus.swift`
+- `Sources/MyWhisperCore/Views/SettingsView.swift`
 - `Tests/MyWhisperTests/MyWhisperTests.swift`
 
 ## Verifikation
@@ -202,9 +206,7 @@ Alle Aenderungen sind in `main` gemergt und gepusht.
 
 ### Mittel
 
-- Overlay/UI-Qualitaet weiter verbessern, wenn wieder Fokus auf Design gelegt wird
-- Live-Transkriptionsdarstellung eleganter machen
-- Pegelmeter komplett neu denken, nicht nur kosmetisch anpassen
+- Menubar-Feedback eleganter gestalten, wenn wieder Fokus auf Design gelegt wird
 
 ### Spaeter moeglich
 
@@ -222,13 +224,11 @@ Wenn du die Arbeit fortsetzt:
 2. Lies danach `AppModel.swift` und `DictationService.swift`.
 3. Behandle den aktuellen SpeechAnalyzer-Pfad als die neue einzige lokale Backend-Implementierung.
 4. Lies danach auch den Text-Polish-Pfad in `TextPolishCoordinator.swift` und `AppleIntelligenceTextPolisher.swift`.
-5. Fasse den Overlay-Stand nicht als final auf.
-6. Regressionsrisiko aktuell vor allem bei:
+5. Regressionsrisiko aktuell vor allem bei:
    - `AVAudioEngine`-Session-Lifecycle
    - Apple-Intelligence-Availability und Prompt-Verhalten
-   - Live-Preview-UI
    - Paste-Finalisierung nach Hotkey-Release
 
 ## Git-Stand
 
-Working Tree ist sauber. Alle Aenderungen sind commitet und auf `origin/main` gepusht.
+Working Tree zuletzt sauber nach dem letzten bekannten Commit. Aenderungen aus dem Session 2026-04-23 (HotkeyService, Overlay-Entfernung, Doku) sind lokal vorhanden aber noch nicht commitet.
