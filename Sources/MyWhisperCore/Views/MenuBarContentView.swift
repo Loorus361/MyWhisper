@@ -45,22 +45,6 @@ struct MenuBarContentView: View {
 
         Divider()
 
-        Section("Last Inserted") {
-            if let lastRecord = model.lastRecord {
-                Text(lastRecord.finalText)
-                    .lineLimit(4)
-
-                Button("Copy Last Inserted") {
-                    model.copyLastFinalText()
-                }
-            } else {
-                Text("Nothing inserted yet.")
-                    .foregroundStyle(.secondary)
-            }
-        }
-
-        Divider()
-
         Button("Open History") {
             openWindow(id: AppConstants.historyWindowID)
             AppWindowPositioner.bringForward(role: .history)

@@ -126,10 +126,6 @@ final class AppModel {
     }
 #endif
 
-    var lastRecord: TranscriptionRecord? {
-        history.first
-    }
-
     var textPolishProfiles: [TextPolishProfile] {
         settings.textPolishProfiles
     }
@@ -290,14 +286,6 @@ final class AppModel {
 
     func retrySelectedLanguagePreparation() async {
         _ = await prepareSelectedLanguageIfNeeded(force: true, interactive: false)
-    }
-
-    func copyLastFinalText() {
-        guard let text = lastRecord?.finalText else { return }
-
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
     }
 
     func requestMicrophonePermission() async {
