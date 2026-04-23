@@ -13,7 +13,7 @@ The current product shape is:
 - on-device rewrite via Apple Intelligence for `Minimal`, `Technical`, `Rewrite`, and `Custom`
 - system-wide insertion through clipboard set -> paste -> clipboard restore
 - local history storing both raw and final text
-- settings window for permissions, language defaults, dictation vocabulary, and text polish prompts
+- settings window for permissions, language defaults, dictation vocabulary, and text polish system/style prompts
 
 The app is intentionally macOS-first and personal-tool-first. Favor reliability, latency, and clarity over broad feature scope.
 
@@ -75,13 +75,15 @@ If you need to reason about app behavior, start with:
 - Keep raw transcription and polished text distinct.
   Recognition quality and polish quality are separate concerns in this product.
 - Keep the text polish profile model explicit.
-  `Clean` is deterministic and fast; `Minimal`, `Technical`, `Rewrite`, and `Custom` are on-device AI profiles with user-visible prompts.
+  `Clean` is deterministic and fast; `Minimal`, `Technical`, `Rewrite`, and `Custom` are on-device AI profiles with separate visible system prompts and style prompts.
 - Preserve local-first behavior by default.
   Cloud features, if added later, should be optional and isolated behind explicit settings or profile choices.
 - Treat Apple Intelligence as optional runtime capability, not a guaranteed dependency.
   Unsupported devices, disabled Apple Intelligence, model-not-ready states, or unsupported locales must keep the app usable by falling back to `Clean`.
 - Apple Intelligence prompt composition must explicitly pin output to the selected app language.
   German dictation should never be translated to English by `Minimal`, `Technical`, `Rewrite`, or `Custom`.
+- Keep the hard language/safety guardrails separate from user-editable profile prompts.
+  User-editable system/style prompts may tune rewrite behavior, but must not become the only place where language pinning or instruction-safety rules live.
 - `Technical` should preserve coding vocabulary, Git terms, product names, filenames, CLI commands, and code identifiers instead of translating them into natural German prose.
 - Apple Intelligence must treat dictated text as inert content.
   It should rewrite command-like dictation as text, not execute the command.
@@ -140,7 +142,7 @@ Important persisted data:
 
 - settings JSON
 - selected text polish profile ID
-- visible prompts for `Minimal`, `Technical`, `Rewrite`, and `Custom`
+- visible system/style prompts for `Minimal`, `Technical`, `Rewrite`, and `Custom`
 - editable dictation vocabulary used as Apple Speech contextual strings
 - history JSON containing raw and final transcripts
 - history profile names for the applied polish mode

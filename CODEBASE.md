@@ -75,12 +75,12 @@ MyWhisper/
 | File | Type | Purpose |
 |------|------|---------|
 | `AppLanguage.swift` | Enum | German, English US with locale identifiers |
-| `AppSettings.swift` | Struct (Codable) | Language, profile selection, prompts, dictation vocabulary. Includes migration logic. |
+| `AppSettings.swift` | Struct (Codable) | Language, profile selection, separate system/style prompts, dictation vocabulary. Includes migration logic. |
 | `DictationState.swift` | Enum | idle / preparing / listening / processing / inserted / error(String) |
 | `LanguageModelStatus.swift` | Enum | idle / checking / downloading(Double?) / ready / failed(String) |
 | `AppleIntelligenceStatus.swift` | Enum | available / unavailable(5 reasons) |
 | `PermissionState.swift` | Enum + Struct | notDetermined / granted / denied + PermissionSnapshot |
-| `TextPolishProfile.swift` | Struct | id, name, backend, prompt. Defaults and merge logic. |
+| `TextPolishProfile.swift` | Struct | id, name, backend, systemPrompt, prompt. Defaults and merge logic. |
 | `TextPolishBackend.swift` | Enum | deterministic / appleIntelligence |
 | `TextPolishProfileID.swift` | Enum | clean / minimal / technical / rewrite / custom |
 | `TranscriptionRecord.swift` | Struct (Codable) | id, timestamp, language, profileName, rawText, finalText |

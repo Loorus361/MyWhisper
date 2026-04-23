@@ -59,26 +59,29 @@ struct SettingsView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Prompt")
+                    Text("Prompt Configuration")
                         .font(.headline)
 
                     if model.selectedTextPolishPromptIsEditable {
-                        TextEditor(
+                        promptEditor(
+                            title: "System Prompt",
+                            text: Binding(
+                                get: { model.selectedTextPolishSystemPrompt },
+                                set: { model.updateSelectedTextPolishSystemPrompt($0) }
+                            ),
+                            resetTitle: "Reset System Prompt",
+                            resetAction: model.resetSelectedTextPolishSystemPrompt
+                        )
+
+                        promptEditor(
+                            title: "Prompt",
                             text: Binding(
                                 get: { model.selectedTextPolishPrompt },
                                 set: { model.updateSelectedTextPolishPrompt($0) }
-                            )
+                            ),
+                            resetTitle: "Reset Prompt",
+                            resetAction: model.resetSelectedTextPolishPrompt
                         )
-                        .font(.system(.body, design: .monospaced))
-                        .frame(minHeight: 150)
-
-                        HStack {
-                            Spacer()
-
-                            Button("Reset Prompt") {
-                                model.resetSelectedTextPolishPrompt()
-                            }
-                        }
                     } else {
                         ScrollView {
                             Text(model.selectedTextPolishPrompt)
@@ -184,6 +187,29 @@ struct SettingsView: View {
         }
 
         return "\(profile.name) (Unavailable)"
+    }
+
+    @ViewBuilder
+    private func promptEditor(
+        title: String,
+        text: Binding<String>,
+        resetTitle: String,
+        resetAction: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.headline)
+
+            TextEditor(text: text)
+                .font(.system(.body, design: .monospaced))
+                .frame(minHeight: 120)
+
+            HStack {
+                Spacer()
+
+                Button(resetTitle, action: resetAction)
+            }
+        }
     }
 }
 

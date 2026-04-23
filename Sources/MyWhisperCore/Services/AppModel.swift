@@ -163,6 +163,10 @@ final class AppModel {
         selectedTextPolishProfile.prompt
     }
 
+    var selectedTextPolishSystemPrompt: String {
+        selectedTextPolishProfile.systemPrompt
+    }
+
     var selectedTextPolishPromptIsEditable: Bool {
         selectedTextPolishProfile.isPromptEditable
     }
@@ -253,6 +257,24 @@ final class AppModel {
 
         var updatedSettings = settings
         updatedSettings.resetPrompt(for: selectedTextPolishProfile.id)
+        settings = updatedSettings
+        settingsStore.save(settings)
+    }
+
+    func updateSelectedTextPolishSystemPrompt(_ systemPrompt: String) {
+        guard selectedTextPolishPromptIsEditable else { return }
+
+        var updatedSettings = settings
+        updatedSettings.updateSystemPrompt(systemPrompt, for: selectedTextPolishProfile.id)
+        settings = updatedSettings
+        settingsStore.save(settings)
+    }
+
+    func resetSelectedTextPolishSystemPrompt() {
+        guard selectedTextPolishPromptIsEditable else { return }
+
+        var updatedSettings = settings
+        updatedSettings.resetSystemPrompt(for: selectedTextPolishProfile.id)
         settings = updatedSettings
         settingsStore.save(settings)
     }

@@ -31,6 +31,15 @@ struct AppSettings: Codable, Equatable {
         textPolishProfiles.first(where: { $0.id == id })
     }
 
+    mutating func updateSystemPrompt(_ systemPrompt: String, for id: TextPolishProfileID) {
+        guard let index = textPolishProfiles.firstIndex(where: { $0.id == id }) else { return }
+        textPolishProfiles[index].systemPrompt = systemPrompt
+    }
+
+    mutating func resetSystemPrompt(for id: TextPolishProfileID) {
+        updateSystemPrompt(TextPolishProfile.defaultProfile(for: id).systemPrompt, for: id)
+    }
+
     mutating func updatePrompt(_ prompt: String, for id: TextPolishProfileID) {
         guard let index = textPolishProfiles.firstIndex(where: { $0.id == id }) else { return }
         textPolishProfiles[index].prompt = prompt
