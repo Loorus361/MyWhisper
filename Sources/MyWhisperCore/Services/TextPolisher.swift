@@ -1,4 +1,4 @@
-F// Applies the deterministic cleanup pass used by the Clean text polish profile.
+// Applies the deterministic cleanup pass used by the Clean text polish profile.
 import Foundation
 
 protocol DeterministicTextPolishing: Sendable {
