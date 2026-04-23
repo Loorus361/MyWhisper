@@ -23,7 +23,7 @@ public struct MyWhisperRootScenes: Scene {
             MenuBarContentView(model: model)
         } label: {
             HStack(spacing: 5) {
-                Image(systemName: model.dictationState.menuBarSymbolName)
+                Image(systemName: model.menuBarSymbolName)
                 Text(model.settings.selectedLanguage.shortCode)
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
             }

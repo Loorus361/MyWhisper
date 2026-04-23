@@ -9,34 +9,30 @@ struct MenuBarContentView: View {
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
-        Menu("Language") {
+        Section("Language") {
             ForEach(AppLanguage.allCases) { language in
                 Button {
                     model.updateLanguage(language)
                 } label: {
-                    HStack {
-                        Text(language.menuTitle)
-                        if model.settings.selectedLanguage == language {
-                            Spacer()
-                            Image(systemName: "checkmark")
-                        }
-                    }
+                    selectionRow(
+                        title: language.menuTitle,
+                        isSelected: model.settings.selectedLanguage == language
+                    )
                 }
             }
         }
 
-        Menu("Text Polish") {
+        Divider()
+
+        Section("Text Polish") {
             ForEach(model.textPolishProfiles) { profile in
                 Button {
                     model.updateTextPolishProfile(profile.id)
                 } label: {
-                    HStack {
-                        Text(profileMenuTitle(for: profile))
-                        if model.selectedTextPolishProfile.id == profile.id {
-                            Spacer()
-                            Image(systemName: "checkmark")
-                        }
-                    }
+                    selectionRow(
+                        title: profileMenuTitle(for: profile),
+                        isSelected: model.selectedTextPolishProfile.id == profile.id
+                    )
                 }
                 .disabled(!model.isTextPolishProfileSelectable(profile))
             }
@@ -95,6 +91,18 @@ struct MenuBarContentView: View {
         }
 
         return "\(profile.name) (Unavailable)"
+    }
+
+    @ViewBuilder
+    private func selectionRow(title: String, isSelected: Bool) -> some View {
+        HStack {
+            Text(title)
+
+            if isSelected {
+                Spacer()
+                Image(systemName: "checkmark")
+            }
+        }
     }
 }
 

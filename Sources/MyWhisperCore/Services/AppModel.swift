@@ -26,11 +26,13 @@ final class AppModel {
     private let hotkeyService: HotkeyService
 
     private var stateResetTask: Task<Void, Never>?
+    private var insertionFeedbackTask: Task<Void, Never>?
     private var preparedLanguageIDs = Set<String>()
     private var preparationTask: Task<Bool, Never>?
     private var preparationTaskToken: UUID?
     private var preparingLanguageID: String?
     private var isHotkeyHeld = false
+    private var showsInsertionFeedback = false
 
     init() {
         self.settings = settingsStore.load()
@@ -174,6 +176,10 @@ final class AppModel {
     }
 
     var menuStatusText: String {
+        if showsInsertionFeedback, dictationState == .idle {
+            return "Inserted."
+        }
+
         switch dictationState {
         case .idle:
             switch selectedLanguageModelStatus {
@@ -193,6 +199,14 @@ final class AppModel {
         case .error(let message):
             return message
         }
+    }
+
+    var menuBarSymbolName: String {
+        if showsInsertionFeedback, dictationState == .idle {
+            return DictationState.inserted.menuBarSymbolName
+        }
+
+        return dictationState.menuBarSymbolName
     }
 
     var historyGroups: [HistoryDayGroup] {
@@ -418,8 +432,8 @@ final class AppModel {
                 // HistoryStore logs the failure via OSLog.
             }
 
-            dictationState = .inserted
-            scheduleStateReset(after: 1.0)
+            showInsertionFeedback(for: 1.0)
+            dictationState = .idle
         } catch {
             presentError(error.localizedDescription)
         }
@@ -574,6 +588,8 @@ final class AppModel {
     }
 
     private func presentError(_ message: String) {
+        insertionFeedbackTask?.cancel()
+        showsInsertionFeedback = false
         lastErrorMessage = message
         dictationState = .error(message)
         scheduleStateReset(after: 2.0)
@@ -586,6 +602,17 @@ final class AppModel {
             try? await Task.sleep(nanoseconds: delay)
             guard let self, !Task.isCancelled else { return }
             self.dictationState = .idle
+        }
+    }
+
+    private func showInsertionFeedback(for duration: TimeInterval) {
+        insertionFeedbackTask?.cancel()
+        showsInsertionFeedback = true
+        insertionFeedbackTask = Task { @MainActor [weak self] in
+            let delay = UInt64(duration * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: delay)
+            guard let self, !Task.isCancelled else { return }
+            self.showsInsertionFeedback = false
         }
     }
 }
